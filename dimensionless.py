@@ -4,9 +4,9 @@ __generated_with = "0.18.0"
 app = marimo.App(width="medium", auto_download=["html"])
 
 
-app._unparsable_cell(
-    r"""
-    hehe import numpy as np
+@app.cell
+def _():
+    import numpy as np
     import matplotlib.pyplot as plt
     import seaborn as sns
     from IPython.display import HTML
@@ -18,67 +18,31 @@ app._unparsable_cell(
 
     rng = np.random.default_rng()
     matplotlib.rcParams['animation.embed_limit'] = float('inf')
-    """,
-    name="_"
-)
-
-
-@app.cell
-def _():
-    # # constants
-    # N = 400 # number of edge dislocations, must be even 
-    # pi = np.pi # adding the "np" every time honestly adds up 
-    # sigma_ext = 0 # external shear stress 
-    # b = 2.56e-10 #4e-8 # burgers vector magnitude for copper use 2.56 A
-    # chi_d = 1e-6 #1e-12 # effective mobility, for ice ~1e-12, for copper ~1e-6, see https://journals.aps.org/prb/abstract/10.1103/PhysRevB.8.3537
-    # mu = 44e9 # shear modulus (same units as sheer stress), for ice, use 3 GPa, for copper use 44 GPa
-    # nu = 0.34 # poisson ratio, for ice use 0.3, for copper use 0.34
-    # ye = 1.6e-9 # burgers vector annihilation distance. For copper use 1.6 nm 
-    # D = mu / (2 * np.pi * (1 - nu))
-    # L = 100 * ye # size of cell
-    # t0 = ye**2 / (chi_d * D * b**3)
-    # LATTICE_EDGE_CT = int(L / b) # 30
-    return
+    return mo, np, plt, rng, solve_ivp
 
 
 @app.cell
 def _(np):
-    # scaled constants
-    N = 40
-    pi = np.pi 
-    sigma_ext = 1
-    b = 1 
-    chi_d = 1
-    mu = 1
-    nu = 0.34 # poisson ratio, for ice use 0.3, for copper use 0.34
+    # constants
+    # here we use dimensionless constants, omitting eg nu, mu, D, which cancel (see the whiteboard pictures in dimensionless.md in the notes directory). they have an implied tilde over them 
+    N = 40 # number of dislocations, must be even 
+    assert N % 2 == 0, "N must be even" # hiring managers: I know I can do `1 - (N & 1)`, but this should be readable for physicists 
+                                        # even if wasn't, I'd value readability and pythonicity over a tiny speed delta like this 
+    pi = np.pi
+    sigma_ext = 1 
     ye = 1 
-    D = mu / (2 * np.pi * (1 - nu))
+    b = 1
     L = 100 * ye # size of cell
-    t0 = ye**2 / (chi_d * D * b**3)
-    LATTICE_EDGE_CT = int(L / b) # 30
-    return D, L, LATTICE_EDGE_CT, N, b, chi_d, nu, pi, t0, ye
-
-
-@app.cell
-def _():
-    # dimensionless constants
-
-    return
-
-
-@app.cell
-def _(D, b, chi_d, ye):
-    ye**2 / (chi_d * D * b**3)
-    return
+    t0 = 1
+    LATTICE_EDGE_CT = int(L / b) 
+    return L, LATTICE_EDGE_CT, N, b, pi, t0, ye
 
 
 @app.cell
 def _(L, N, b, np, rng):
     dislocations = np.column_stack((
         rng.random(N) * L, # xs
-        # (rng.random(N) * 1e-9) + 1e-7, 
-        rng.random(N) * L, # ys
-        # b vector directions, making sure the number of positive bs == number of negative bs
+        rng.random(N) * L, # ys 
         b * rng.permuted(
             np.concatenate((
                 np.ones(int(N/2)),
@@ -95,21 +59,20 @@ def _(L, N, b, np, rng):
 
 
 @app.cell
-def _(apply_dislocations, b, dislocations, mo, plot_lattice):
-    X, Y = apply_dislocations(dislocations, b)
+def _(apply_dislocations, dislocations, mo, plot_lattice):
+    X, Y = apply_dislocations(dislocations)
     mo.mpl.interactive(plot_lattice(X, Y, dislocations))
     return
 
 
 @app.cell
-def _(dislocations, sigma_s_analytic_sum, v_i):
-    # velocities are extremely small, even with the greater effectvie mobility of copper 
-    v_i(sigma_s_analytic_sum, dislocations[:,0], dislocations[0,0], dislocations, 0)
+def _(dislocations, sigma_s_analytic_sum, vs):
+    vs(sigma_s_analytic_sum, dislocations[:,0], dislocations)
     return
 
 
 @app.cell
-def _(L, N, dislocations, np, sigma_s_analytic_sum, solve_ivp, t0, v_i, ye):
+def _(L, N, dislocations, np, sigma_s_analytic_sum, solve_ivp, t0, vs, ye):
     # we use this vector to make sure that canceled dislocations don't contribute to dxdt 
     elimination_vector = np.ones(N)
 
@@ -147,20 +110,16 @@ def _(L, N, dislocations, np, sigma_s_analytic_sum, solve_ivp, t0, v_i, ye):
         # this is really slow but should be fine for low N - outer product strategy as above would be faster
         for i in range(0,N):
             for j in range(0,N):
-                if (np.linalg.norm(np.array([xs[i], dislocations[i,1]]) - 
-                                   np.array([xs[j], dislocations[j,1]])) < ye) & (
-                dislocations[i,2] != dislocations[j,2]):               
+                if ((np.linalg.norm(np.array([xs[i], dislocations[i,1]]) - 
+                                   np.array([xs[j], dislocations[j,1]])) < ye) 
+                & (dislocations[i,2] != dislocations[j,2])):               
                     if (elimination_vector[i] != 0) or (elimination_vector[j] != 0):
-                        print(f"annihilation event with {i}: {xs[i]}, {dislocations[i,1]} and {j}: {xs[j]}, {dislocations[j,1]} at t = {t}, the {t/t0}th step")
+                        print(f"annihilation event with {i}: {xs[i]}, {dislocations[i,1]} "
+                        f"and {j}: {xs[j]}, {dislocations[j,1]} at t = {t}, the {t/t0}th step")
 
                         elimination_vector[i] = elimination_vector[j] = 0
 
-
-
-        dxsdt = np.zeros(N)
-        for i, x in enumerate(xs):
-            dxsdt[i] = elimination_vector[i] * v_i(sigma_s_analytic_sum, xs, x, dislocations, i, sigma_ext)
-        return dxsdt
+        return elimination_vector * vs(sigma_s_analytic_sum, xs, dislocations)
 
     # keep this function call with the dxsdt func definition and elimination_vector init
     ivp_result = solve_ivp(dxsdt_func, (t0, num_tpoints*t0), dislocations[:,0], 
@@ -255,8 +214,8 @@ def _(ivp_result_ext_stress, np, plt, strain_deriv):
 
 
 @app.cell
-def _(np, nu):
-    def calculate_displacements(X, Y, disloc_x, disloc_y, b):
+def _(np):
+    def calculate_displacements(X, Y, disloc_x, disloc_y, b, nu=0.3):
         # not a constant because it depends on whether b is pos or negative
         b2pi = b / (2 * np.pi)
 
@@ -278,35 +237,50 @@ def _(np, nu):
 
 @app.cell
 def _(L, LATTICE_EDGE_CT, calculate_displacements, np):
-    def apply_dislocations(dislocations, b):
+    def apply_dislocations(dislocations):
         # non-dislocated lattice 
-        # xs = np.linspace(0, LATTICE_EDGE_CT, LATTICE_EDGE_CT) 
-        # ys = np.linspace(0, LATTICE_EDGE_CT, LATTICE_EDGE_CT) 
         xs = np.linspace(0, L, LATTICE_EDGE_CT)
         ys = np.linspace(0, L, LATTICE_EDGE_CT)
         X_perfect, Y_perfect = np.meshgrid(xs, ys)
         X_flat = X_perfect.flatten()
         Y_flat = Y_perfect.flatten()
 
-        # # accumulate displacements from dislocations
-        # disp_x = np.zeros_like(X_flat)
-        # disp_y = np.zeros_like(Y_flat)
-
-        # for c_x, c_y, b in dislocations:
-        #     u_x, u_y = calculate_displacements(X_flat, Y_flat, c_x, c_y, b)
-        #     disp_x += u_x
-        #     disp_y += u_y
-
-        # X_new = (X_flat + disp_x)  % L
-        # Y_new = (Y_flat + disp_y)  % L
-
+        # iteratively apply dislocations to lattice points 
         for c_x, c_y, b in dislocations:
             u_x, u_y = calculate_displacements(X_flat, Y_flat, c_x, c_y, b)
             X_flat = (X_flat + u_x) % L
             Y_flat = (Y_flat + u_y) % L
 
         return X_flat, Y_flat
+
     return (apply_dislocations,)
+
+
+@app.cell
+def _(L, LATTICE_EDGE_CT, calculate_displacements, np):
+    # will give similar results as apply_dislocations but the edge behavior is cleaner, though i think it's technically incorrect 
+    def apply_dislocations2(dislocations):
+        # non-dislocated lattice 
+        xs = np.linspace(0, L, LATTICE_EDGE_CT)
+        ys = np.linspace(0, L, LATTICE_EDGE_CT)
+        X_perfect, Y_perfect = np.meshgrid(xs, ys)
+        X_flat = X_perfect.flatten()
+        Y_flat = Y_perfect.flatten()
+
+        # accumulate displacements from dislocations
+        disp_x = np.zeros_like(X_flat)
+        disp_y = np.zeros_like(Y_flat)
+
+        for c_x, c_y, b in dislocations:
+            u_x, u_y = calculate_displacements(X_flat, Y_flat, c_x, c_y, b)
+            disp_x += u_x
+            disp_y += u_y
+
+        X_new = (X_flat + disp_x)  % L
+        Y_new = (Y_flat + disp_y)  % L
+
+        return X_new, Y_new 
+    return
 
 
 @app.cell
@@ -329,34 +303,40 @@ def _(plt):
 
 
 @app.cell
-def _(D, L, N, b, np, pi):
+def _(L, N, np, pi):
     # infinite sum from eqn 1 in the paper
-    def sigma_s_analytic_sum(target_x, target_y, dislocations):
-        X = target_x - dislocations[:,0]
-        Y = target_y - dislocations[:,1]
+    # xs and ys should be row vectors - MAKE SURE THEY'RE WITHIN L 
+    def sigma_s_analytic_sum(xs, ys):
+        # X is a matrix whose ith column is xs[i] - xs, x[i]'s distance from the other dislocations (Y too WLOG)
+        X = xs - xs.reshape(N,1)
+        Y = ys - ys.reshape(N,1)
 
         x_arg = 2 * pi * X / L
         y_arg = 2 * pi * Y / L 
 
-        num = pi * D * b * np.sin(x_arg) * (
+        # eliminated leading constants before doing the analytic sum 
+        num = pi * np.sin(x_arg) * (
             L * np.cos(x_arg) + 2 * pi * Y * np.sinh(y_arg)
             - L * np.cosh(y_arg)
         )
         den = L**2 * (np.cos(x_arg) - np.cosh(y_arg))**2
 
-        #sets stress to zero when X[i] or Y[i] = 0 (ie at the point we dont want to compute)
-        return np.divide(num, den, out=np.zeros(N), where=((X!=0) & (Y!=0))) # or den!=0) - add if needed (if getting divide by zero errors but should be taken care of with the other conditions)
+        # sets stress to zero when X[i] or Y[i] = 0 (ie at the point we dont want to compute)
+        return np.divide(num, den, out=np.zeros((N,N)), where=((X!=0) & (Y!=0))) # or den!=0) - add if needed (if getting divide by zero errors but should be taken care of with the other conditions) 
     return (sigma_s_analytic_sum,)
 
 
 @app.cell
-def _(b, chi_d):
-    # eqn 2 in the paper
-    def v_i(sigma_fn, xs, curr_x, dislocations, dislocation_i, sigma_ext=0):
-        _, curr_y, curr_b = dislocations[dislocation_i,:]
-        bracketed = dislocations[:,2] @ sigma_fn(curr_x, curr_y, dislocations) + sigma_ext 
-        return curr_b * b * chi_d * bracketed
-    return (v_i,)
+def _(np):
+    # eqn 2 in the paper (but vectorized! MWAHAHA)
+    # make sure sigma_fn returns a matrix whose main diagonal elements are zero
+    def vs(sigma_fn, xs, dislocations, sigma_ext=0):
+    
+        sigmas = sigma_fn(xs, dislocations[:,1])
+        assert np.all(np.isclose(0, np.diagonal(sigmas))), "make sure your sigma_fn returns a matrix with zeros on the main diagonal"
+    
+        return np.sign(dislocations[:,2]) * (np.sign(dislocations[:,2]) @ sigmas + sigma_ext)
+    return (vs,)
 
 
 if __name__ == "__main__":
