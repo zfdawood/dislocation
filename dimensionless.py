@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.18.0"
+__generated_with = "0.18.4"
 app = marimo.App(width="medium", auto_download=["html"])
 
 
@@ -35,7 +35,7 @@ def _(np):
     L = 100 * ye # size of cell
     t0 = 1
     LATTICE_EDGE_CT = int(L / b) 
-    return L, LATTICE_EDGE_CT, N, b, pi, t0, ye
+    return L, LATTICE_EDGE_CT, N, b, pi, t0
 
 
 @app.cell
@@ -72,54 +72,46 @@ def _(dislocations, sigma_s_analytic_sum, vs):
 
 
 @app.cell
-def _(L, N, dislocations, np, sigma_s_analytic_sum, solve_ivp, t0, vs, ye):
+def _(L, N, dislocations, np, sigma_s_analytic_sum, solve_ivp, t0, vs):
     # we use this vector to make sure that canceled dislocations don't contribute to dxdt 
-    elimination_vector = np.ones(N)
+    elimination_vector = np.column_stack((np.ones(N), np.zeros(N)))
 
     # number of points to use in the ivp solver
-    num_tpoints = 1000
+    num_tpoints = 150
 
 
     def dxsdt_func(t, xs_p, sigma_ext):
         # the positions used by the ivp solver aren't bound to the box so we apply that binding here
         xs = xs_p % L
 
-        # # annihilation_list is a list of ordered pairs of annihilated dislocations 
-        # # we mark a dislocation to be annihilated when... 
-        # annihilation_list = zip(*(np.nonzero(
-        #     # ... two dislocations are within ye of each other... 
-        #     # (this particular implementation draws more of a square bounding box 
-        #     # than a circle one to check closeness but it's fine)
-        #     (np.isclose(xs.reshape(-1,1), xs.reshape(1,-1), rtol=0, atol=ye))
-            # & (np.isclose(dislocations[:,1].reshape(-1,1), dislocations[:,1].reshape(1,-1), rtol=0, atol=ye))
-        #     # ... and the dislocations have opposite burgers vectors... 
-        #     & (dislocations[:,2].reshape(-1,1) != dislocations[:,2].reshape(1,-1)) 
-        #     # ... and they aren't the same dislocation (should be taken care of by the previous point)
-        #     # & (np.logical_not(np.diagflat(np.repeat(True, N))))
-        # )))
+    
+        # annihilation_list is a list of ordered pairs of annihilated dislocations 
+        # we mark a dislocation to be annihilated when... 
+        annihilation_list = np.column_stack(np.nonzero(
+            # ... two dislocations are within ye of each other... 
+            # (this particular implementation draws more of a square bounding box 
+            # than a circle one to check closeness but it's fine)
+            (np.isclose(xs.reshape(-1,1), xs.reshape(1,-1), rtol=0, atol=10))
+            & (np.isclose(dislocations[:,1].reshape(-1,1), dislocations[:,1].reshape(1,-1), rtol=0, atol=10))
+            # ... and the dislocations have opposite burgers vectors... 
+            & (dislocations[:,2].reshape(-1,1) != dislocations[:,2].reshape(1,-1)) 
+            # ... and they aren't the same dislocation (should be taken care of by the previous point)
+            # & (np.logical_not(np.diagflat(np.repeat(True, N))))
+        ))
 
-        # for (i, j) in annihilation_list: 
-        #     if elimination_vector[i] != 0 or elimination_vector[j] != 0:
-        #         print(f"annihilation event with {i} and {j} at t = {t}, the {t/t0}th step")
-        #     elimination_vector[i] = 0
-        #     elimination_vector[j] = 0
-        # # this whole thing can probably be improved by concatenating after np.nonzero and then
-        # # just elimination_vector[concatenated id'd close dislocations, duplicates are fine] = 0
+        for (i, j) in annihilation_list: 
+            # if (elimination_vector[i] != 0) or (elimination_vector[j] != 0):
+            #     print(f"annihilation event with {i} and {j} at t = {t}, the {t/t0}th step")
+            if elimination_vector[i,0] != 0:
+                elimination_vector[i,:] = [0,t] 
+            if elimination_vector[j,0] != 0:
+                elimination_vector[j,:] = [0,t]
+            
+        # this whole thing can probably be improved by concatenating after np.nonzero and then
+        # just elimination_vector[concatenated id'd close dislocations, duplicates are fine] = 0
+        # but that'll make recording the time difficult 
 
-
-        # this is really slow but should be fine for low N - outer product strategy as above would be faster
-        for i in range(0,N):
-            for j in range(0,N):
-                if ((np.linalg.norm(np.array([xs[i], dislocations[i,1]]) - 
-                                   np.array([xs[j], dislocations[j,1]])) < ye) 
-                & (dislocations[i,2] != dislocations[j,2])):               
-                    if (elimination_vector[i] != 0) or (elimination_vector[j] != 0):
-                        print(f"annihilation event with {i}: {xs[i]}, {dislocations[i,1]} "
-                        f"and {j}: {xs[j]}, {dislocations[j,1]} at t = {t}, the {t/t0}th step")
-
-                        elimination_vector[i] = elimination_vector[j] = 0
-
-        return elimination_vector * vs(sigma_s_analytic_sum, xs, dislocations)
+        return elimination_vector[:,0] * vs(sigma_s_analytic_sum, xs, dislocations)
 
     # keep this function call with the dxsdt func definition and elimination_vector init
     ivp_result = solve_ivp(dxsdt_func, (t0, num_tpoints*t0), dislocations[:,0], 
@@ -252,7 +244,6 @@ def _(L, LATTICE_EDGE_CT, calculate_displacements, np):
             Y_flat = (Y_flat + u_y) % L
 
         return X_flat, Y_flat
-
     return (apply_dislocations,)
 
 
@@ -331,10 +322,10 @@ def _(np):
     # eqn 2 in the paper (but vectorized! MWAHAHA)
     # make sure sigma_fn returns a matrix whose main diagonal elements are zero
     def vs(sigma_fn, xs, dislocations, sigma_ext=0):
-    
+
         sigmas = sigma_fn(xs, dislocations[:,1])
         assert np.all(np.isclose(0, np.diagonal(sigmas))), "make sure your sigma_fn returns a matrix with zeros on the main diagonal"
-    
+
         return np.sign(dislocations[:,2]) * (np.sign(dislocations[:,2]) @ sigmas + sigma_ext)
     return (vs,)
 
