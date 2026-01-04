@@ -15,17 +15,18 @@ def _():
     from scipy.integrate import solve_ivp
     import matplotlib
     import marimo as mo
+    import pickle 
 
     rng = np.random.default_rng()
     matplotlib.rcParams['animation.embed_limit'] = float('inf')
-    return mo, np, plt, rng, solve_ivp
+    return animation, mo, np, partial, pickle, plt, rng, solve_ivp
 
 
 @app.cell
 def _(np):
     # constants
     # here we use dimensionless constants, omitting eg nu, mu, D, which cancel (see the whiteboard pictures in dimensionless.md in the notes directory). they have an implied tilde over them 
-    N = 40 # number of dislocations, must be even 
+    N = 400 # number of dislocations, must be even 
     assert N % 2 == 0, "N must be even" # hiring managers: I know I can do `1 - (N & 1)`, but this should be readable for physicists 
                                         # even if wasn't, I'd value readability and pythonicity over a tiny speed delta like this 
     pi = np.pi
@@ -35,7 +36,7 @@ def _(np):
     L = 100 * ye # size of cell
     t0 = 1
     LATTICE_EDGE_CT = int(L / b) 
-    return L, LATTICE_EDGE_CT, N, b, pi, t0
+    return L, LATTICE_EDGE_CT, N, b, pi, t0, ye
 
 
 @app.cell
@@ -62,7 +63,7 @@ def _(L, N, b, np, rng):
 def _(apply_dislocations, dislocations, mo, plot_lattice):
     X, Y = apply_dislocations(dislocations)
     mo.mpl.interactive(plot_lattice(X, Y, dislocations))
-    return
+    return X, Y
 
 
 @app.cell
@@ -72,41 +73,44 @@ def _(dislocations, sigma_s_analytic_sum, vs):
 
 
 @app.cell
-def _(L, N, dislocations, np, sigma_s_analytic_sum, solve_ivp, t0, vs):
+def _(L, N, dislocations, np, sigma_s_analytic_sum, solve_ivp, t0, vs, ye):
     # we use this vector to make sure that canceled dislocations don't contribute to dxdt 
     elimination_vector = np.column_stack((np.ones(N), np.zeros(N)))
 
     # number of points to use in the ivp solver
-    num_tpoints = 150
+    num_tpoints = 1000
 
 
     def dxsdt_func(t, xs_p, sigma_ext):
         # the positions used by the ivp solver aren't bound to the box so we apply that binding here
         xs = xs_p % L
+        print(t)
 
-    
         # annihilation_list is a list of ordered pairs of annihilated dislocations 
         # we mark a dislocation to be annihilated when... 
         annihilation_list = np.column_stack(np.nonzero(
             # ... two dislocations are within ye of each other... 
             # (this particular implementation draws more of a square bounding box 
             # than a circle one to check closeness but it's fine)
-            (np.isclose(xs.reshape(-1,1), xs.reshape(1,-1), rtol=0, atol=10))
-            & (np.isclose(dislocations[:,1].reshape(-1,1), dislocations[:,1].reshape(1,-1), rtol=0, atol=10))
+            (np.isclose(xs.reshape(-1,1), xs.reshape(1,-1), rtol=0, atol=ye))
+            & (np.isclose(dislocations[:,1].reshape(-1,1), dislocations[:,1].reshape(1,-1), rtol=0, atol=ye))
             # ... and the dislocations have opposite burgers vectors... 
             & (dislocations[:,2].reshape(-1,1) != dislocations[:,2].reshape(1,-1)) 
+            # ... and they haven't been previously selected...
+            # (this looks convoluted but the operation would take literally forever without it)
+            & np.outer((elimination_vector[:,0].reshape(-1,1)), (elimination_vector[:,0])).astype(bool)
             # ... and they aren't the same dislocation (should be taken care of by the previous point)
             # & (np.logical_not(np.diagflat(np.repeat(True, N))))
         ))
 
         for (i, j) in annihilation_list: 
-            # if (elimination_vector[i] != 0) or (elimination_vector[j] != 0):
+            # if (elimination_vector[i,0] != 0) or (elimination_vector[j,0] != 0):
             #     print(f"annihilation event with {i} and {j} at t = {t}, the {t/t0}th step")
             if elimination_vector[i,0] != 0:
                 elimination_vector[i,:] = [0,t] 
             if elimination_vector[j,0] != 0:
                 elimination_vector[j,:] = [0,t]
-            
+
         # this whole thing can probably be improved by concatenating after np.nonzero and then
         # just elimination_vector[concatenated id'd close dislocations, duplicates are fine] = 0
         # but that'll make recording the time difficult 
@@ -115,45 +119,73 @@ def _(L, N, dislocations, np, sigma_s_analytic_sum, solve_ivp, t0, vs):
 
     # keep this function call with the dxsdt func definition and elimination_vector init
     ivp_result = solve_ivp(dxsdt_func, (t0, num_tpoints*t0), dislocations[:,0], 
-                           t_eval=np.linspace(t0, num_tpoints * t0, num_tpoints), method="RK23", args=(0,))
-    return dxsdt_func, ivp_result, num_tpoints
+                           t_eval=np.linspace(t0, num_tpoints * t0, num_tpoints), method="RK45", args=(0,))
+    return dxsdt_func, elimination_vector, ivp_result, num_tpoints
 
 
 @app.cell
-def _(L, ivp_result, np):
-    print(ivp_result.y[np.array([18,28]),:] % L)
+def _():
+    import pickle 
+    return (pickle,)
+
+
+@app.cell
+def _(dislocations, ivp_result, pickle):
+    with open("./pickles/1000iter_rk45.pkl", "wb") as file:
+        pickle.dump((dislocations, ivp_result), file)
+    return
+
+
+@app.cell
+def _(elimination_vector, pickle):
+    with open("./pickles/1000iter_rk45.pkl", "wb") as file3:
+        pickle.dump(elimination_vector, file3)
+    return
+
+
+@app.cell
+def _(pickle):
+    with open("./pickles/1000iter_rk45.pkl", "rb") as file2:
+        uhhh = pickle.load(file2)
+    uhhh
+    return (uhhh,)
+
+
+@app.cell
+def _(uhhh):
+    uhhh[1].t
+    return
+
+
+@app.cell
+def _(L, apply_dislocations, dislocations, ivp_result, mo, np, plot_lattice):
+    post_relaxation_dislocations = np.copy(dislocations)
+    post_relaxation_dislocations[:,0] = ivp_result.y[:,-1] % L 
+
+    X_post, Y_post = apply_dislocations(post_relaxation_dislocations)
+    mo.mpl.interactive(plot_lattice(X_post, Y_post, post_relaxation_dislocations))
+    return (post_relaxation_dislocations,)
+
+
+@app.cell
+def _(L, X, Y, animation, dislocations, ivp_result, np, partial, plt):
+    anifig, aniax = plt.subplots()
+    aniax.scatter(X,Y)
+    aniax.scatter(dislocations[:,0], dislocations[:,1])
+    scat = aniax.scatter([], [], c='r')
+    def animate(i, xs):
+        scat.set_offsets(np.column_stack((xs[:,i] % L, dislocations[:,1])))
+        return (scat, scat)
+    ani = animation.FuncAnimation(anifig, partial(animate, xs=ivp_result.y), frames=1000, blit=True)    
+    # HTML(ani.to_jshtml())
+    FFwriter = animation.FFMpegWriter(fps=10)
+    ani.save('animation.mp4', writer = FFwriter)
     return
 
 
 @app.cell
 def _():
-    # sloppy code to double-check closeness 
-    # lastxs = ivp_result.y[:,-1]
-    # lastys = dislocations[:,1]
-    # for i in range(0,N):
-    #     for j in range(0,N):
-    #         if (np.sqrt((lastxs[i] - lastxs[j])**2 + (lastys[i] - lastys[j])**2) < ye) and dislocations[i,2] != dislocations[j,2] and (elimination_vector[i] != 0 or elimination_vector[j] != 0):
-    #             print(f"{i} and {j} and {abs(ivp_result.y[:,-1][i] - ivp_result.y[:,-1][j])} and {abs(lastys[i]-lastys[j])}")
     return
-
-
-@app.cell
-def _(
-    L,
-    apply_dislocations,
-    b,
-    dislocations,
-    ivp_result,
-    mo,
-    np,
-    plot_lattice,
-):
-    post_relaxation_dislocations = np.copy(dislocations)
-    post_relaxation_dislocations[:,0] = ivp_result.y[:,-1] % L 
-
-    X_post, Y_post = apply_dislocations(post_relaxation_dislocations, b)
-    mo.mpl.interactive(plot_lattice(X_post, Y_post, post_relaxation_dislocations))
-    return (post_relaxation_dislocations,)
 
 
 @app.cell
@@ -271,6 +303,11 @@ def _(L, LATTICE_EDGE_CT, calculate_displacements, np):
         Y_new = (Y_flat + disp_y)  % L
 
         return X_new, Y_new 
+    return
+
+
+@app.cell
+def _():
     return
 
 
