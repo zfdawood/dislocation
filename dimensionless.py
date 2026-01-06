@@ -168,18 +168,90 @@ def _(L, apply_dislocations, dislocations, ivp_result, mo, np, plot_lattice):
 
 
 @app.cell
-def _(L, X, Y, animation, dislocations, ivp_result, np, partial, plt):
-    anifig, aniax = plt.subplots()
-    aniax.scatter(X,Y)
-    aniax.scatter(dislocations[:,0], dislocations[:,1])
-    scat = aniax.scatter([], [], c='r')
-    def animate(i, xs):
-        scat.set_offsets(np.column_stack((xs[:,i] % L, dislocations[:,1])))
-        return (scat, scat)
-    ani = animation.FuncAnimation(anifig, partial(animate, xs=ivp_result.y), frames=1000, blit=True)    
+def _(
+    L,
+    X,
+    Y,
+    animation,
+    apply_dislocations,
+    dislocations,
+    elimination_vector,
+    ivp_result,
+    np,
+    partial,
+    plt,
+):
+    anifig, aniax = plt.subplots(figsize=(9,9))
+
+    aniax.scatter(X,Y, label="lattice points (base)")
+    aniax.scatter(dislocations[:,0], dislocations[:,1], label="dislocations (base)")
+
+    scat_lattice = aniax.scatter([], [], c='g', label="lattice points")
+    scat_pos_b = aniax.scatter([], [], c='y', label="dislocations with b = 1")
+    scat_neg_b = aniax.scatter([], [], c='m', label="dislocations with b = -1")
+
+    def animate(i, xs_p):
+        xs = xs_p[:,i] % L
+
+        lattice_positions = np.column_stack(apply_dislocations(np.column_stack((
+            xs, dislocations[:,1:]
+        ))))
+        scat_lattice.set_offsets(lattice_positions)
+    
+        xs_pos = xs[(dislocations[:,2] == 1) & ((elimination_vector[:,1] > 10) | (elimination_vector[:,1] == 0))]
+        ys_pos = dislocations[(dislocations[:,2] == 1) & ((elimination_vector[:,1] > 10) 
+                                                          | (elimination_vector[:,1] == 0)), 1]
+        dislocations_i_pos = np.column_stack((
+            xs_pos,
+            ys_pos,
+        ))
+        scat_pos_b.set_offsets(dislocations_i_pos)
+    
+        xs_neg = xs[(dislocations[:,2] == -1) & ((elimination_vector[:,1] > 10) | (elimination_vector[:,1] == 0))]
+        ys_neg = dislocations[(dislocations[:,2] == -1) & ((elimination_vector[:,1] > 10) 
+                                                           | (elimination_vector[:,1] == 0)), 1]
+        dislocations_i_neg = np.column_stack((
+            xs_neg,
+            ys_neg
+        ))
+        scat_neg_b.set_offsets(dislocations_i_neg)
+    
+        return (scat_lattice, scat_pos_b, scat_neg_b)
+
+    aniax.set_title("Randomly-placed dislocation relaxation\n400 dislocations, annihilation distance within 1 lattice cell ") 
+    aniax.set_xlabel("x")
+    aniax.set_ylabel("y")
+    aniax.legend()
+
+    ani = animation.FuncAnimation(anifig, 
+                                  partial(animate, xs_p=ivp_result.y), 
+                                  frames=1000, 
+                                  blit=True)    
+
     # HTML(ani.to_jshtml())
     FFwriter = animation.FFMpegWriter(fps=10)
-    ani.save('animation.mp4', writer = FFwriter)
+    ani.save('1000iter_relaxation_animation.mp4', writer = FFwriter)
+    return
+
+
+@app.cell
+def _(elimination_vector):
+    elimination_vector
+    return
+
+
+@app.cell
+def _(dislocations):
+    dislocations
+    return
+
+
+@app.cell
+def _(dislocations, np):
+    (thing, thing2, thing3) = np.unstack(dislocations, axis=1)
+    print(thing)
+    print(thing2)
+    print(thing3)
     return
 
 
