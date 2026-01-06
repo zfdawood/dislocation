@@ -198,8 +198,8 @@ def _(
         ))))
         scat_lattice.set_offsets(lattice_positions)
     
-        xs_pos = xs[(dislocations[:,2] == 1) & ((elimination_vector[:,1] > 10) | (elimination_vector[:,1] == 0))]
-        ys_pos = dislocations[(dislocations[:,2] == 1) & ((elimination_vector[:,1] > 10) 
+        xs_pos = xs[(dislocations[:,2] == 1) & ((elimination_vector[:,1] > i) | (elimination_vector[:,1] == 0))]
+        ys_pos = dislocations[(dislocations[:,2] == 1) & ((elimination_vector[:,1] > i) 
                                                           | (elimination_vector[:,1] == 0)), 1]
         dislocations_i_pos = np.column_stack((
             xs_pos,
@@ -207,8 +207,8 @@ def _(
         ))
         scat_pos_b.set_offsets(dislocations_i_pos)
     
-        xs_neg = xs[(dislocations[:,2] == -1) & ((elimination_vector[:,1] > 10) | (elimination_vector[:,1] == 0))]
-        ys_neg = dislocations[(dislocations[:,2] == -1) & ((elimination_vector[:,1] > 10) 
+        xs_neg = xs[(dislocations[:,2] == -1) & ((elimination_vector[:,1] > i) | (elimination_vector[:,1] == 0))]
+        ys_neg = dislocations[(dislocations[:,2] == -1) & ((elimination_vector[:,1] > i) 
                                                            | (elimination_vector[:,1] == 0)), 1]
         dislocations_i_neg = np.column_stack((
             xs_neg,
