@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.18.0"
+__generated_with = "0.18.4"
 app = marimo.App(width="medium", auto_download=["html"])
 
 
@@ -17,27 +17,31 @@ def _():
     import marimo as mo
     import pickle 
     import os 
-
-    rng = np.random.default_rng()
-    matplotlib.rcParams['animation.embed_limit'] = float('inf')
-    return animation, mo, np, os, partial, pickle, plt, rng, solve_ivp
+    return animation, matplotlib, mo, np, os, partial, pickle, plt, solve_ivp
 
 
 @app.cell
-def _(np):
-    # constants
-    # here we use dimensionless constants, omitting eg nu, mu, D, which cancel (see the whiteboard pictures in dimensionless.md in the notes directory). they have an implied tilde over them 
-    N = 400 # number of dislocations, must be even 
-    assert N % 2 == 0, "N must be even" # hiring managers: I know I can do `1 - (N & 1)`, but this should be readable for physicists 
-                                        # even if wasn't, I'd value readability and pythonicity over a tiny speed delta like this 
-    pi = np.pi
-    sigma_ext = 1 
-    ye = 1 
-    b = 1
-    L = 100 * ye # size of cell
-    t0 = 1
-    LATTICE_EDGE_CT = int(L / b) 
-    return L, LATTICE_EDGE_CT, N, b, pi, t0, ye
+def _(matplotlib, np):
+    pi = np.pi 
+    matplotlib.rcParams['animation.embed_limit'] = float('inf')
+    return (pi,)
+
+
+@app.cell
+def _():
+    # # constants
+    # # here we use dimensionless constants, omitting eg nu, mu, D, which cancel (see the whiteboard pictures in dimensionless.md in the notes directory). they have an implied tilde over them 
+    # N = 400 # number of dislocations, must be even 
+    # assert N % 2 == 0, "N must be even" # hiring managers: I know I can do `1 - (N & 1)`, but this should be readable for physicists 
+    #                                     # even if wasn't, I'd value readability and pythonicity over a tiny speed delta like this 
+    # pi = np.pi
+    # sigma_ext = 1 
+    # ye = 1 
+    # b = 1
+    # L = 100 * ye # size of cell
+    # t0 = 1
+    # LATTICE_EDGE_CT = int(L / b) 
+    return
 
 
 @app.cell
@@ -289,12 +293,6 @@ def _(
 
 
 @app.cell
-def _():
-    import os
-    return (os,)
-
-
-@app.cell
 def _(dislocations, elimination_vector_2, ivp_result_2, os, pickle):
     filename = "./pickles/1000iter_rk45_LAPTOP_0.035.pkl"
     if not os.path.exists(filename):
@@ -303,50 +301,10 @@ def _(dislocations, elimination_vector_2, ivp_result_2, os, pickle):
     return
 
 
-@app.cell
-def _(
-    L,
-    animation,
-    apply_dislocations,
-    dislocations,
-    elimination_vector_2,
-    ivp_result,
-    ivp_result_2,
-    np,
-    partial,
-    plt,
-):
+app._unparsable_cell(
+    r"""
     anifig_s, aniax_s = plt.subplots(figsize=(9,9))
-
-    X_relax, Y_relax = apply_dislocations(np.column_stack((
-            ivp_result.y[:,-1], dislocations[:,1:]
-        )))
-
-    aniax_s.scatter(X_relax,Y_relax, label="lattice points (relaxed)")
-    aniax_s.scatter(ivp_result.y[:,-1] % L, dislocations[:,1], label="dislocations (relaxed)")
-
-    scat_lattice_s = aniax_s.scatter([], [], c='g', label="lattice points")
-    scat_pos_b_s = aniax_s.scatter([], [], c='y', label="dislocations with b = 1")
-    scat_neg_b_s = aniax_s.scatter([], [], c='m', label="dislocations with b = -1")
-
-    def animate_2(i, xs_p):
-        xs = xs_p[:,i] % L
-
-        lattice_positions = np.column_stack(apply_dislocations(np.column_stack((
-            xs, dislocations[:,1:]
-        ))))
-        scat_lattice_s.set_offsets(lattice_positions)
-
-        xs_pos = xs[(dislocations[:,2] == 1) & ((elimination_vector_2[:,1] > i + 1000) | (elimination_vector_2[:,1] == 0))]
-        ys_pos = dislocations[(dislocations[:,2] == 1) & ((elimination_vector_2[:,1] > i + 1000) 
-                                                          | (elimination_vector_2[:,1] == 0)), 1]
-        dislocations_i_pos = np.column_stack((
-            xs_pos,
-            ys_pos,
-        ))
-        scat_pos_b_s.set_offsets(dislocations_i_pos)
-
-        xs_neg = xs[(dislocations[:,2] == -1) & ((elimination_vector_2[:,1] > i + 1000) | (elimination_vector_2[:,1] == 0))]
+    ] = xs[(dislocations[:,2] == -1) & ((elimination_vector_2[:,1] > i + 1000) | (elimination_vector_2[:,1] == 0))]
         ys_neg = dislocations[(dislocations[:,2] == -1) & ((elimination_vector_2[:,1] > i + 1000) 
                                                            | (elimination_vector_2[:,1] == 0)), 1]
         dislocations_i_neg = np.column_stack((
@@ -357,9 +315,9 @@ def _(
 
         return (scat_lattice_s, scat_pos_b_s, scat_neg_b_s)
 
-    aniax_s.set_title("Randomly-placed dislocation with $sigma = 0.035$\n400 dislocations, annihilation distance within 1 lattice cell ") 
-    aniax_s.set_xlabel("x")
-    aniax_s.set_ylabel("y")
+    aniax_s.set_title(\"Randomly-placed dislocation with $sigma = 0.035$\n400 dislocations, annihilation distance within 1 lattice cell \") 
+    aniax_s.set_xlabel(\"x\")
+    aniax_s.set_ylabel(\"y\")
     aniax_s.legend()
 
     ani_s = animation.FuncAnimation(anifig_s, 
@@ -368,14 +326,10 @@ def _(
                                   blit=True)    
 
     FFwriter_s = animation.FFMpegWriter(fps=10)
-    ani_s.save("dude i dont know.mp4", writer = FFwriter_s)
-    return
-
-
-@app.cell
-def _(truth_selector):
-    truth_selector
-    return
+    ani_s.save(\"dude i dont know.mp4\", writer = FFwriter_s)
+    """,
+    name="_"
+)
 
 
 @app.cell
@@ -394,8 +348,7 @@ def _(
         bs = dislocations[truth_selector,2]
         xs = ivp_result_2.y[truth_selector, i] % L 
         strains[i] = bs @ vs(sigma_s_analytic_sum, xs, dislocations[truth_selector,:], sigma_ext=0.035)
-    
-    return strains, truth_selector
+    return (strains,)
 
 
 @app.cell
@@ -439,28 +392,6 @@ def _(ivp_result_ext_stress, np, plt, strain_deriv):
     ax.plot(np.log10(ivp_result_ext_stress.t[:600]), np.log10(strain_deriv[:600]))
     plt.show()
     return (ax,)
-
-
-@app.cell
-def _(np):
-    def calculate_displacements(X, Y, disloc_x, disloc_y, b, nu=0.3):
-        # not a constant because it depends on whether b is pos or negative
-        b2pi = b / (2 * np.pi)
-
-        # existing lattice points
-        X_rel = X - disloc_x
-        Y_rel = Y - disloc_y
-        # in polar 
-        r = np.sqrt(X_rel**2 + Y_rel**2)
-        theta = np.arctan2(Y_rel, X_rel)
-
-        # horizontal and vertical displacement 
-        u_x = b2pi * (theta + (np.sin(2*theta) / (4*(1-nu))))
-        # the additive constant np.log(r + 1e-19) is to prevent log(0) errors 
-        u_y = -b2pi * ( ((1-2*nu)/(2*(1-nu))) * np.log(r) + 
-                        (np.cos(2*theta) / (4*(1-nu))) ) 
-        return u_x, u_y
-    return (calculate_displacements,)
 
 
 @app.cell
@@ -511,11 +442,6 @@ def _(L, LATTICE_EDGE_CT, calculate_displacements, np):
 
 
 @app.cell
-def _():
-    return
-
-
-@app.cell
 def _(plt):
     def plot_lattice(lattice_x, lattice_y, dislocations):
         fig, ax = plt.subplots(figsize=(9, 9))
@@ -532,6 +458,30 @@ def _(plt):
         ax.set_ylabel('y')
         return fig
     return (plot_lattice,)
+
+
+@app.cell
+def sigma_s_analytic_sum(L, N, np, pi):
+    # infinite sum from eqn 1 in the paper
+    # xs and ys should be row vectors - MAKE SURE THEY'RE WITHIN L 
+    def sigma_s_analytic_sum(xs, ys):
+        # X is a matrix whose ith column is xs[i] - xs, x[i]'s distance from the other dislocations (Y too WLOG)
+        X = xs - xs.reshape(-1,1)
+        Y = ys - ys.reshape(-1,1)
+
+        x_arg = 2 * pi * X / L
+        y_arg = 2 * pi * Y / L 
+
+        # eliminated leading constants before doing the analytic sum 
+        num = pi * np.sin(x_arg) * (
+            L * np.cos(x_arg) + 2 * pi * Y * np.sinh(y_arg)
+            - L * np.cosh(y_arg)
+        )
+        den = L**2 * (np.cos(x_arg) - np.cosh(y_arg))**2
+
+        # sets stress to zero when X[i] or Y[i] = 0 (ie at the point we dont want to compute)
+        return np.divide(num, den, out=np.zeros((N,N)), where=((X!=0) & (Y!=0))) # or den!=0) - add if needed (if getting divide by zero errors but should be taken care of with the other conditions) 
+    return (sigma_s_analytic_sum,)
 
 
 @app.cell
@@ -580,6 +530,102 @@ def _(os, pickle):
             with open(filename, "wb") as file:
                 pickle.dump(obj, file)
     return
+
+
+@app.cell
+def _(np, pi):
+    # TODO - try negative sig_s
+
+    class LatticeCell:
+
+        def __init__(self, N, sigma_ext, ye, L, t0, b, nu=0.3, rng_seed=None):
+            self.rng = np.random.default_rng(rng_seed)
+            self.x0s = self.rng.random(N) * L 
+            self.ys = self.rng.random(N) * L 
+            self.b = b 
+            self.nu = nu 
+            self.bs = b * self.rng.permuted(
+                np.concatenate((
+                    np.ones(int(N/2)),
+                     -(np.ones(int(N/2)))
+                ))
+            )
+            self.sigma_ext = sigma_ext
+            self.ye = ye
+            self.L = L 
+            self.t0 = t0
+            self.LATTICE_EDGE_CT = int(L/b)
+
+        def apply_dislocations(self, dislocations_xs=None, dislocations_ys=None, bs=None):
+            if dislocations_xs is None:
+                dislocations_xs = self.x0s
+            if dislocations_ys is None:
+                dislocations_ys = self.ys
+            if bs is None:
+                bs = self.bs 
+
+            # non-dislocated lattice 
+            xs = np.linspace(0, self.L, self.LATTICE_EDGE_CT)
+            ys = np.linspace(0, self.L, self.LATTICE_EDGE_CT)
+            X_perfect, Y_perfect = np.meshgrid(xs, ys)
+            X_flat, Y_flat = X_perfect.flatten(), Y_perfect.flatten()
+
+            # iteratively apply dislocations to lattice points 
+            for c_x, c_y, b in np.column_stack((dislocations_xs, dislocations_ys, bs)):
+                u_x, u_y = self.calculate_displacements(X_flat, Y_flat, c_x, c_y, b)
+                X_flat = (X_flat + u_x) % self.L
+                Y_flat = (Y_flat + u_y) % self.L
+
+            self.lattice_points = np.column_stack((X_flat, Y_flat))
+            return X_flat, Y_flat
+
+        def calculate_displacements(self, X, Y, disloc_x, disloc_y, b):
+            # not a constant because it depends on whether b is pos or negative
+            b2pi = b / (2 * pi)
+
+            # existing lattice points
+            X_rel = X - disloc_x
+            Y_rel = Y - disloc_y
+            # in polar 
+            r = np.sqrt(X_rel**2 + Y_rel**2)
+            theta = np.arctan2(Y_rel, X_rel)
+
+            # horizontal and vertical displacement 
+            u_x = b2pi * (theta + (np.sin(2*theta) / (4*(1-self.nu))))
+            # the additive constant np.log(r + 1e-19) is to prevent log(0) errors 
+            u_y = -b2pi * ( ((1-2*self.nu)/(2*(1-self.nu))) * np.log(r) + 
+                            (np.cos(2*theta) / (4*(1-self.nu))) ) 
+            return u_x, u_y
+    return (LatticeCell,)
+
+
+@app.cell
+def _(LatticeCell):
+    thing = LatticeCell(40, 0, 1, 100, 1, 1)
+    thing.apply_dislocations()
+    return
+
+
+@app.cell
+def _(np):
+    def calculate_displacements(X, Y, disloc_x, disloc_y, b, nu=0.3):
+        # not a constant because it depends on whether b is pos or negative
+        b2pi = b / (2 * np.pi)
+
+        # existing lattice points
+        X_rel = X - disloc_x
+        Y_rel = Y - disloc_y
+        # in polar 
+        r = np.sqrt(X_rel**2 + Y_rel**2)
+        theta = np.arctan2(Y_rel, X_rel)
+
+        # horizontal and vertical displacement 
+        u_x = b2pi * (theta + (np.sin(2*theta) / (4*(1-nu))))
+        # the additive constant np.log(r + 1e-19) is to prevent log(0) errors 
+        u_y = -b2pi * ( ((1-2*nu)/(2*(1-nu))) * np.log(r) + 
+                        (np.cos(2*theta) / (4*(1-nu))) ) 
+        return u_x, u_y
+    return (calculate_displacements,)
 
 
 if __name__ == "__main__":
