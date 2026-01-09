@@ -509,6 +509,31 @@ def _(L, N, np, pi):
 
 
 @app.cell
+def _(L, N, np, pi):
+    # dude idk looked this way in the equation paper. 
+    # infinite sum from eqn 1 in the paper
+    # xs and ys should be row vectors - MAKE SURE THEY'RE WITHIN L 
+    def sigma_s_analytic_sum_minus(xs, ys):
+        # X is a matrix whose ith column is xs[i] - xs, x[i]'s distance from the other dislocations (Y too WLOG)
+        X = xs - xs.reshape(-1,1)
+        Y = ys - ys.reshape(-1,1)
+
+        x_arg = 2 * pi * X / L
+        y_arg = 2 * pi * Y / L 
+
+        # eliminated leading constants before doing the analytic sum 
+        num = pi * np.sin(x_arg) * (
+            L * np.cos(x_arg) + 2 * pi * Y * np.sinh(y_arg)
+            - L * np.cosh(y_arg)
+        )
+        den = L**2 * (np.cos(x_arg) - np.cosh(y_arg))**2
+
+        # sets stress to zero when X[i] or Y[i] = 0 (ie at the point we dont want to compute)
+        return -np.divide(num, den, out=np.zeros((N,N)), where=((X!=0) & (Y!=0))) # or den!=0) - add if needed (if getting divide by zero errors but should be taken care of with the other conditions) 
+    return
+
+
+@app.cell
 def _(np):
     # eqn 2 in the paper (but vectorized! MWAHAHA)
     # make sure sigma_fn returns a matrix whose main diagonal elements are zero
