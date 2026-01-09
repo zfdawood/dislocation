@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.18.0"
+__generated_with = "0.18.4"
 app = marimo.App(width="medium", auto_download=["html"])
 
 
@@ -27,11 +27,11 @@ def _():
 def _(np):
     # constants
     # here we use dimensionless constants, omitting eg nu, mu, D, which cancel (see the whiteboard pictures in dimensionless.md in the notes directory). they have an implied tilde over them 
-    N = 400 # number of dislocations, must be even 
+    N = 50 # number of dislocations, must be even 
     assert N % 2 == 0, "N must be even" # hiring managers: I know I can do `1 - (N & 1)`, but this should be readable for physicists 
                                         # even if wasn't, I'd value readability and pythonicity over a tiny speed delta like this 
     pi = np.pi
-    sigma_ext = 1 
+    sigma_ext = 0.035
     ye = 1 
     b = 1
     L = 100 * ye # size of cell
@@ -223,10 +223,10 @@ def _(
 
 
 @app.cell
-def _(FFwriter, ani, os):
-    vidname_relax = './1000iter_relaxation_animation.mp4'
+def _(FFwriter, N, ani, os):
+    vidname_relax = f'./{N}iter_relaxation_animation.mp4'
     if not os.path.exists(vidname_relax):
-        ani.save('1000iter_relaxation_animation.mp4', writer = FFwriter)
+        ani.save(vidname_relax, writer = FFwriter)
     return
 
 
@@ -286,12 +286,6 @@ def _(
     ivp_result_2 = solve_ivp(dxsdt_func_2, (t0, num_tpoints*t0), ivp_result.y[:,-1], 
                            t_eval=np.linspace(t0, num_tpoints * t0, num_tpoints), method="RK45", args=(0.035,))
     return elimination_vector_2, ivp_result_2
-
-
-@app.cell
-def _():
-    import os
-    return (os,)
 
 
 @app.cell
@@ -373,12 +367,6 @@ def _(
 
 
 @app.cell
-def _(truth_selector):
-    truth_selector
-    return
-
-
-@app.cell
 def _(
     L,
     dislocations,
@@ -393,52 +381,51 @@ def _(
         truth_selector = ((elimination_vector_2[:,1] > i + 1000) | (elimination_vector_2[:,1] == 0))
         bs = dislocations[truth_selector,2]
         xs = ivp_result_2.y[truth_selector, i] % L 
-        strains[i] = bs @ vs(sigma_s_analytic_sum, xs, dislocations[truth_selector,:], sigma_ext=0.035)
-    
-    return strains, truth_selector
+        strains[i] = abs(bs @ vs(sigma_s_analytic_sum, xs, dislocations[truth_selector,:], sigma_ext=0.035))
+    return (strains,)
 
 
 @app.cell
-def _(ax, np, plt, strains):
+def _(np, plt, strains):
     fig_line, ax_line = plt.subplots()
-    ax.scatter(np.log10(range(1000)), np.log10(strains))
+    ax_line.scatter(np.log10(range(1000)), np.log10(strains))
     plt.show()
     return
 
 
 @app.cell
-def _(N, dislocations, ivp_result_ext_stress, np, sigma_s_analytic_sum, v_i):
-    # rigorify this 
-    strain_deriv = np.zeros(800)
+def _():
+    # # rigorify this 
+    # strain_deriv = np.zeros(800)
 
-    old_elimination = np.ones(N)
-    old_elimination[[18, 28]] = 0 
+    # old_elimination = np.ones(N)
+    # old_elimination[[18, 28]] = 0 
 
-    new_elimination = np.ones(N)
-    new_elimination[[18, 28, 38, 39]] = 0
+    # new_elimination = np.ones(N)
+    # new_elimination[[18, 28, 38, 39]] = 0
 
-    for i in range(800):
-        for j in range(N):
-            temp_dislocations = np.copy(dislocations)
-            temp_dislocations[:,0] = ivp_result_ext_stress.y[:,i]
-            if (i < 448) & (j in [18,28]) :
-                continue 
-            elif (i > 448) & (j in [18, 28, 38, 39]):
-                continue
-            else:
-                # FIX THE vi and sigma fns to take current xs and not dislocations 
-                strain_deriv[i] += dislocations[j,2] * v_i(sigma_s_analytic_sum, ivp_result_ext_stress.y[:,i],
-                                             ivp_result_ext_stress.y[j,i], temp_dislocations, j, sigma_ext=0.035)
-    print(strain_deriv)
-    return (strain_deriv,)
+    # for i in range(800):
+    #     for j in range(N):
+    #         temp_dislocations = np.copy(dislocations)
+    #         temp_dislocations[:,0] = ivp_result_ext_stress.y[:,i]
+    #         if (i < 448) & (j in [18,28]) :
+    #             continue 
+    #         elif (i > 448) & (j in [18, 28, 38, 39]):
+    #             continue
+    #         else:
+    #             # FIX THE vi and sigma fns to take current xs and not dislocations 
+    #             strain_deriv[i] += dislocations[j,2] * v_i(sigma_s_analytic_sum, ivp_result_ext_stress.y[:,i],
+    #                                          ivp_result_ext_stress.y[j,i], temp_dislocations, j, sigma_ext=0.035)
+    # print(strain_deriv)
+    return
 
 
 @app.cell
-def _(ivp_result_ext_stress, np, plt, strain_deriv):
-    fig, ax = plt.subplots()
-    ax.plot(np.log10(ivp_result_ext_stress.t[:600]), np.log10(strain_deriv[:600]))
-    plt.show()
-    return (ax,)
+def _():
+    # fig, ax = plt.subplots()
+    # ax.plot(np.log10(ivp_result_ext_stress.t[:600]), np.log10(strain_deriv[:600]))
+    # plt.show()
+    return
 
 
 @app.cell
@@ -535,7 +522,7 @@ def _(plt):
 
 
 @app.cell
-def _(L, N, np, pi):
+def _(L, np, pi):
     # infinite sum from eqn 1 in the paper
     # xs and ys should be row vectors - MAKE SURE THEY'RE WITHIN L 
     def sigma_s_analytic_sum(xs, ys):
@@ -554,7 +541,7 @@ def _(L, N, np, pi):
         den = L**2 * (np.cos(x_arg) - np.cosh(y_arg))**2
 
         # sets stress to zero when X[i] or Y[i] = 0 (ie at the point we dont want to compute)
-        return np.divide(num, den, out=np.zeros((N,N)), where=((X!=0) & (Y!=0))) # or den!=0) - add if needed (if getting divide by zero errors but should be taken care of with the other conditions) 
+        return -np.divide(num, den, out=np.zeros((xs.size,xs.size)), where=((X!=0) & (Y!=0))) # or den!=0) - add if needed (if getting divide by zero errors but should be taken care of with the other conditions) 
     return (sigma_s_analytic_sum,)
 
 
