@@ -27,7 +27,7 @@ def _():
 def _(np):
     # constants
     # here we use dimensionless constants, omitting eg nu, mu, D, which cancel (see the whiteboard pictures in dimensionless.md in the notes directory). they have an implied tilde over them 
-    N = 50 # number of dislocations, must be even 
+    N = 400 # number of dislocations, must be even 
     assert N % 2 == 0, "N must be even" # hiring managers: I know I can do `1 - (N & 1)`, but this should be readable for physicists 
                                         # even if wasn't, I'd value readability and pythonicity over a tiny speed delta like this 
     pi = np.pi
@@ -146,16 +146,6 @@ def _(uhhh):
 
 
 @app.cell
-def _(L, apply_dislocations, dislocations, ivp_result, mo, np, plot_lattice):
-    post_relaxation_dislocations = np.copy(dislocations)
-    post_relaxation_dislocations[:,0] = ivp_result.y[:,-1] % L 
-
-    X_post, Y_post = apply_dislocations(post_relaxation_dislocations)
-    mo.mpl.interactive(plot_lattice(X_post, Y_post, post_relaxation_dislocations))
-    return
-
-
-@app.cell
 def _(
     L,
     X,
@@ -223,8 +213,41 @@ def _(
 
 
 @app.cell
+def _(
+    L,
+    dislocations,
+    elimination_vector,
+    ivp_result,
+    np,
+    sigma_s_analytic_sum,
+    vs,
+):
+    strains_prestress = np.zeros(1000)
+    for j in range(ivp_result.t.size):
+        truth_selector_prestress = ((elimination_vector[:,1] > j) | (elimination_vector[:,1] == 0))
+        bs_prestress = dislocations[truth_selector_prestress,2]
+        xs_prestress = ivp_result.y[truth_selector_prestress, j] % L 
+        strains_prestress[j] = abs(bs_prestress @ vs(sigma_s_analytic_sum, xs_prestress, dislocations[truth_selector_prestress,:]))
+    return (strains_prestress,)
+
+
+@app.cell
+def _(np, plt, strains_prestress):
+    fig_line, ax_line = plt.subplots()
+    ax_line.scatter(np.log10(range(1,1001)), np.log10(strains_prestress))
+    for jndex, strain in enumerate(strains_prestress):
+        if strain == 0: 
+            ax_line.scatter(np.log10(jndex), strain, c='r')
+    ax_line.set_xlabel("$log_{10}(t)$")
+    ax_line.set_ylabel("$log_{10}(strain rate)$")
+    ax_line.set_title("strain rate vs time for relaxation regime\nThe red dots represent points of zero strain rate")
+    plt.show()
+    return
+
+
+@app.cell
 def _(FFwriter, N, ani, os):
-    vidname_relax = f'./{N}iter_relaxation_animation.mp4'
+    vidname_relax = f'./{N}iter_relaxation_animation_testing_correspondence.mp4'
     if not os.path.exists(vidname_relax):
         ani.save(vidname_relax, writer = FFwriter)
     return
@@ -362,7 +385,7 @@ def _(
                                   blit=True)    
 
     FFwriter_s = animation.FFMpegWriter(fps=10)
-    ani_s.save("dude i dont know.mp4", writer = FFwriter_s)
+    ani_s.save("50_annihilation_movie.mp4", writer = FFwriter_s)
     return
 
 
@@ -387,8 +410,11 @@ def _(
 
 @app.cell
 def _(np, plt, strains):
-    fig_line, ax_line = plt.subplots()
-    ax_line.scatter(np.log10(range(1000)), np.log10(strains))
+    fig_line_2, ax_line_2 = plt.subplots()
+    ax_line_2.scatter(np.log10(range(1000)), np.log10(strains))
+    ax_line_2.set_xlabel("$log_{10}(t)$")
+    ax_line_2.set_ylabel("$log_{10}$(strain rate)")
+    ax_line_2.set_title(r"strain rate vs time when $\sigma=0.035$")
     plt.show()
     return
 
