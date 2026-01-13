@@ -29,290 +29,6 @@ with app.setup:
     matplotlib.rcParams['animation.embed_limit'] = float('inf')
 
 
-@app.cell
-def _(dislocations, vs):
-    vs(sigma_s_analytic_sum, dislocations[:,0], dislocations)
-    return
-
-
-@app.cell
-def _():
-    # with open("./pickles/1000iter_rk45_LAPTOP.pkl", "wb") as file:
-    #     pickle.dump((dislocations, ivp_result, elimination_vector), file)
-    return
-
-
-@app.cell
-def _():
-    # with open("./pickles/1000iter_rk45_LAPTOP.pkl", "rb") as file2:
-    #     uhhh = pickle.load(file2)
-    # uhhh
-    return
-
-
-@app.cell
-def _(uhhh):
-    uhhh[1].t
-    return
-
-
-@app.cell
-def _(L, apply_dislocations, dislocations, ivp_result, plot_lattice):
-    post_relaxation_dislocations = np.copy(dislocations)
-    post_relaxation_dislocations[:,0] = ivp_result.y[:,-1] % L 
-
-    X_post, Y_post = apply_dislocations(post_relaxation_dislocations)
-    mo.mpl.interactive(plot_lattice(X_post, Y_post, post_relaxation_dislocations))
-    return
-
-
-@app.cell
-def _(
-    L,
-    X,
-    Y,
-    apply_dislocations,
-    dislocations,
-    elimination_vector,
-    ivp_result,
-):
-    anifig, aniax = plt.subplots(figsize=(9,9))
-
-    aniax.scatter(X,Y, label="lattice points (base)")
-    aniax.scatter(dislocations[:,0], dislocations[:,1], label="dislocations (base)")
-
-    scat_lattice = aniax.scatter([], [], c='g', label="lattice points")
-    scat_pos_b = aniax.scatter([], [], c='y', label="dislocations with b = 1")
-    scat_neg_b = aniax.scatter([], [], c='m', label="dislocations with b = -1")
-
-    def animate(i, xs_p):
-        xs = xs_p[:,i] % L
-
-        lattice_positions = np.column_stack(apply_dislocations(np.column_stack((
-            xs, dislocations[:,1:]
-        ))))
-        scat_lattice.set_offsets(lattice_positions)
-
-        xs_pos = xs[(dislocations[:,2] == 1) & ((elimination_vector[:,1] > i) | (elimination_vector[:,1] == 0))]
-        ys_pos = dislocations[(dislocations[:,2] == 1) & ((elimination_vector[:,1] > i) 
-                                                          | (elimination_vector[:,1] == 0)), 1]
-        dislocations_i_pos = np.column_stack((
-            xs_pos,
-            ys_pos,
-        ))
-        scat_pos_b.set_offsets(dislocations_i_pos)
-
-        xs_neg = xs[(dislocations[:,2] == -1) & ((elimination_vector[:,1] > i) | (elimination_vector[:,1] == 0))]
-        ys_neg = dislocations[(dislocations[:,2] == -1) & ((elimination_vector[:,1] > i) 
-                                                           | (elimination_vector[:,1] == 0)), 1]
-        dislocations_i_neg = np.column_stack((
-            xs_neg,
-            ys_neg
-        ))
-        scat_neg_b.set_offsets(dislocations_i_neg)
-
-        return (scat_lattice, scat_pos_b, scat_neg_b)
-
-    aniax.set_title("Randomly-placed dislocation relaxation\n400 dislocations, annihilation distance within 1 lattice cell ") 
-    aniax.set_xlabel("x")
-    aniax.set_ylabel("y")
-    aniax.legend()
-
-    ani = animation.FuncAnimation(anifig, 
-                                  partial(animate, xs_p=ivp_result.y), 
-                                  frames=1000, 
-                                  blit=True)    
-
-    # HTML(ani.to_jshtml())
-
-    FFwriter = animation.FFMpegWriter(fps=10)
-    return FFwriter, ani
-
-
-@app.cell
-def _(FFwriter, ani):
-    vidname_relax = './1000iter_relaxation_animation.mp4'
-    if not os.path.exists(vidname_relax):
-        ani.save('1000iter_relaxation_animation.mp4', writer = FFwriter)
-    return
-
-
-@app.cell
-def _(
-    L,
-    dislocations,
-    elimination_vector,
-    ivp_result,
-    num_tpoints,
-    t0,
-    vs,
-    ye,
-):
-    # we use this vector to make sure that canceled dislocations don't contribute to dxdt 
-    elimination_vector_2 = elimination_vector.copy()
-
-
-    def dxsdt_func_2(t, xs_p, sigma_ext):
-        # the positions used by the ivp solver aren't bound to the box so we apply that binding here
-        xs = xs_p % L
-        print(t + 1000)
-
-        # annihilation_list is a list of ordered pairs of annihilated dislocations 
-        # we mark a dislocation to be annihilated when... 
-        annihilation_list = np.column_stack(np.nonzero(
-            # ... two dislocations are within ye of each other... 
-            # (this particular implementation draws more of a square bounding box 
-            # than a circle one to check closeness but it's fine)
-            (np.isclose(xs.reshape(-1,1), xs.reshape(1,-1), rtol=0, atol=ye))
-            & (np.isclose(dislocations[:,1].reshape(-1,1), dislocations[:,1].reshape(1,-1), rtol=0, atol=ye))
-            # ... and the dislocations have opposite burgers vectors... 
-            & (dislocations[:,2].reshape(-1,1) != dislocations[:,2].reshape(1,-1)) 
-            # ... and they haven't been previously selected...
-            # (this looks convoluted but the operation would take literally forever without it)
-            & np.outer((elimination_vector_2[:,0].reshape(-1,1)), (elimination_vector_2[:,0])).astype(bool)
-            # ... and they aren't the same dislocation (should be taken care of by the previous point)
-            # & (np.logical_not(np.diagflat(np.repeat(True, N))))
-        ))
-
-        for (i, j) in annihilation_list:
-            if elimination_vector_2[i,0] != 0:
-                elimination_vector_2[i,:] = [0,t + 1000] 
-            if elimination_vector_2[j,0] != 0:
-                elimination_vector_2[j,:] = [0,t + 1000]
-
-        # this whole thing can probably be improved by concatenating after np.nonzero and then
-        # just elimination_vector[concatenated id'd close dislocations, duplicates are fine] = 0
-        # but that'll make recording the time difficult 
-
-        return elimination_vector_2[:,0] * vs(sigma_s_analytic_sum, xs, dislocations, sigma_ext=sigma_ext)
-
-    # keep this function call with the dxsdt func definition and elimination_vector init
-    ivp_result_2 = solve_ivp(dxsdt_func_2, (t0, num_tpoints*t0), ivp_result.y[:,-1], 
-                           t_eval=np.linspace(t0, num_tpoints * t0, num_tpoints), method="RK45", args=(0.035,))
-    return elimination_vector_2, ivp_result_2
-
-
-@app.cell
-def _(dislocations, elimination_vector_2, ivp_result_2):
-    filename = "./pickles/1000iter_rk45_LAPTOP_0.035.pkl"
-    if not os.path.exists(filename):
-        with open(filename, "wb") as file2:
-            pickle.dump((dislocations, ivp_result_2, elimination_vector_2), file2)
-    return
-
-
-app._unparsable_cell(
-    r"""
-    anifig_s, aniax_s = plt.subplots(figsize=(9,9))
-    ] = xs[(dislocations[:,2] == -1) & ((elimination_vector_2[:,1] > i + 1000) | (elimination_vector_2[:,1] == 0))]
-        ys_neg = dislocations[(dislocations[:,2] == -1) & ((elimination_vector_2[:,1] > i + 1000) 
-                                                           | (elimination_vector_2[:,1] == 0)), 1]
-        dislocations_i_neg = np.column_stack((
-            xs_neg,
-            ys_neg
-        ))
-        scat_neg_b_s.set_offsets(dislocations_i_neg)
-
-        return (scat_lattice_s, scat_pos_b_s, scat_neg_b_s)
-
-    aniax_s.set_title(\"Randomly-placed dislocation with $sigma = 0.035$\n400 dislocations, annihilation distance within 1 lattice cell \") 
-    aniax_s.set_xlabel(\"x\")
-    aniax_s.set_ylabel(\"y\")
-    aniax_s.legend()
-
-    ani_s = animation.FuncAnimation(anifig_s, 
-                                  partial(animate_2, xs_p=ivp_result_2.y), 
-                                  frames=1000, 
-                                  blit=True)    
-
-    FFwriter_s = animation.FFMpegWriter(fps=10)
-    ani_s.save(\"dude i dont know.mp4\", writer = FFwriter_s)
-    """,
-    name="_"
-)
-
-
-@app.cell
-def _(L, dislocations, elimination_vector_2, ivp_result_2, vs):
-    strains = np.zeros(1000)
-    for i in range(ivp_result_2.t.size):
-        truth_selector = ((elimination_vector_2[:,1] > i + 1000) | (elimination_vector_2[:,1] == 0))
-        bs = dislocations[truth_selector,2]
-        xs = ivp_result_2.y[truth_selector, i] % L 
-        strains[i] = bs @ vs(sigma_s_analytic_sum, xs, dislocations[truth_selector,:], sigma_ext=0.035)
-    return (strains,)
-
-
-@app.cell
-def _(ax, strains):
-    fig_line, ax_line = plt.subplots()
-    ax.scatter(np.log10(range(1000)), np.log10(strains))
-    plt.show()
-    return
-
-
-@app.cell
-def _(N, dislocations, ivp_result_ext_stress, v_i):
-    # rigorify this 
-    strain_deriv = np.zeros(800)
-
-    old_elimination = np.ones(N)
-    old_elimination[[18, 28]] = 0 
-
-    new_elimination = np.ones(N)
-    new_elimination[[18, 28, 38, 39]] = 0
-
-    for i in range(800):
-        for j in range(N):
-            temp_dislocations = np.copy(dislocations)
-            temp_dislocations[:,0] = ivp_result_ext_stress.y[:,i]
-            if (i < 448) & (j in [18,28]) :
-                continue 
-            elif (i > 448) & (j in [18, 28, 38, 39]):
-                continue
-            else:
-                # FIX THE vi and sigma fns to take current xs and not dislocations 
-                strain_deriv[i] += dislocations[j,2] * v_i(sigma_s_analytic_sum, ivp_result_ext_stress.y[:,i],
-                                             ivp_result_ext_stress.y[j,i], temp_dislocations, j, sigma_ext=0.035)
-    print(strain_deriv)
-    return (strain_deriv,)
-
-
-@app.cell
-def _(ivp_result_ext_stress, strain_deriv):
-    fig, ax = plt.subplots()
-    ax.plot(np.log10(ivp_result_ext_stress.t[:600]), np.log10(strain_deriv[:600]))
-    plt.show()
-    return (ax,)
-
-
-@app.cell
-def _(L, LATTICE_EDGE_CT, calculate_displacements):
-    # will give similar results as apply_dislocations but the edge behavior is cleaner, though i think it's technically incorrect 
-    def apply_dislocations2(dislocations):
-        # non-dislocated lattice 
-        xs = np.linspace(0, L, LATTICE_EDGE_CT)
-        ys = np.linspace(0, L, LATTICE_EDGE_CT)
-        X_perfect, Y_perfect = np.meshgrid(xs, ys)
-        X_flat = X_perfect.flatten()
-        Y_flat = Y_perfect.flatten()
-
-        # accumulate displacements from dislocations
-        disp_x = np.zeros_like(X_flat)
-        disp_y = np.zeros_like(Y_flat)
-
-        for c_x, c_y, b in dislocations:
-            u_x, u_y = calculate_displacements(X_flat, Y_flat, c_x, c_y, b)
-            disp_x += u_x
-            disp_y += u_y
-
-        X_new = (X_flat + disp_x)  % L
-        Y_new = (Y_flat + disp_y)  % L
-
-        return X_new, Y_new 
-    return
-
-
 @app.function
 # TODO: BOTTOM HERE
 # infinite sum from eqn 1 in the paper
@@ -334,7 +50,7 @@ def sigma_s_analytic_sum(xs, ys, L):
         den = L**2 * (np.cos(x_arg) - np.cosh(y_arg))**2
 
         # sets stress to zero when X[i] or Y[i] = 0 (ie at the point we dont want to compute)
-        return -np.divide(num, den, out=np.zeros((xs.size,xs.size)), where=((X!=0) & (Y!=0)))
+        return -np.divide(num, den, out=np.zeros((xs.size,xs.size)), where=((X!=0) & (Y!=0))) # might need an extra condition like & elim!=0 - may be causing some of the noise
 
 
 @app.function
@@ -555,17 +271,6 @@ def _(res, thing):
     return
 
 
-@app.cell
-def _():
-    return
-
-
-@app.cell
-def _():
-    # TODO compare with main branch one (copy and paste from the github lol)
-    return
-
-
 @app.function
 def write_to_disk(filename, obj):
     if os.path.exists(filename):
@@ -576,20 +281,197 @@ def write_to_disk(filename, obj):
 
 
 @app.cell
-def _():
-    a = np.arange(10)
-    return (a,)
+def _(
+    L,
+    X,
+    Y,
+    apply_dislocations,
+    dislocations,
+    elimination_vector,
+    ivp_result,
+):
+    anifig, aniax = plt.subplots(figsize=(9,9))
 
+    aniax.scatter(X,Y, label="lattice points (base)")
+    aniax.scatter(dislocations[:,0], dislocations[:,1], label="dislocations (base)")
 
-@app.function
-def fn(a):
-    a[0] = 10
+    scat_lattice = aniax.scatter([], [], c='g', label="lattice points")
+    scat_pos_b = aniax.scatter([], [], c='y', label="dislocations with b = 1")
+    scat_neg_b = aniax.scatter([], [], c='m', label="dislocations with b = -1")
+
+    def animate(i, xs_p):
+        xs = xs_p[:,i] % L
+
+        lattice_positions = np.column_stack(apply_dislocations(np.column_stack((
+            xs, dislocations[:,1:]
+        ))))
+        scat_lattice.set_offsets(lattice_positions)
+
+        xs_pos = xs[(dislocations[:,2] == 1) & ((elimination_vector[:,1] > i) | (elimination_vector[:,1] == 0))]
+        ys_pos = dislocations[(dislocations[:,2] == 1) & ((elimination_vector[:,1] > i) 
+                                                          | (elimination_vector[:,1] == 0)), 1]
+        dislocations_i_pos = np.column_stack((
+            xs_pos,
+            ys_pos,
+        ))
+        scat_pos_b.set_offsets(dislocations_i_pos)
+
+        xs_neg = xs[(dislocations[:,2] == -1) & ((elimination_vector[:,1] > i) | (elimination_vector[:,1] == 0))]
+        ys_neg = dislocations[(dislocations[:,2] == -1) & ((elimination_vector[:,1] > i) 
+                                                           | (elimination_vector[:,1] == 0)), 1]
+        dislocations_i_neg = np.column_stack((
+            xs_neg,
+            ys_neg
+        ))
+        scat_neg_b.set_offsets(dislocations_i_neg)
+
+        return (scat_lattice, scat_pos_b, scat_neg_b)
+
+    aniax.set_title("Randomly-placed dislocation relaxation\n400 dislocations, annihilation distance within 1 lattice cell ") 
+    aniax.set_xlabel("x")
+    aniax.set_ylabel("y")
+    aniax.legend()
+
+    ani = animation.FuncAnimation(anifig, 
+                                  partial(animate, xs_p=ivp_result.y), 
+                                  frames=1000, 
+                                  blit=True)    
+
+    # HTML(ani.to_jshtml())
+
+    FFwriter = animation.FFMpegWriter(fps=10)
+    return
 
 
 @app.cell
-def _(a):
-    fn(a)
-    print(a)
+def _(
+    L,
+    dislocations,
+    elimination_vector,
+    ivp_result,
+    num_tpoints,
+    t0,
+    vs,
+    ye,
+):
+    # we use this vector to make sure that canceled dislocations don't contribute to dxdt 
+    elimination_vector_2 = elimination_vector.copy()
+
+
+    def dxsdt_func_2(t, xs_p, sigma_ext):
+        # the positions used by the ivp solver aren't bound to the box so we apply that binding here
+        xs = xs_p % L
+        print(t + 1000)
+
+        # annihilation_list is a list of ordered pairs of annihilated dislocations 
+        # we mark a dislocation to be annihilated when... 
+        annihilation_list = np.column_stack(np.nonzero(
+            # ... two dislocations are within ye of each other... 
+            # (this particular implementation draws more of a square bounding box 
+            # than a circle one to check closeness but it's fine)
+            (np.isclose(xs.reshape(-1,1), xs.reshape(1,-1), rtol=0, atol=ye))
+            & (np.isclose(dislocations[:,1].reshape(-1,1), dislocations[:,1].reshape(1,-1), rtol=0, atol=ye))
+            # ... and the dislocations have opposite burgers vectors... 
+            & (dislocations[:,2].reshape(-1,1) != dislocations[:,2].reshape(1,-1)) 
+            # ... and they haven't been previously selected...
+            # (this looks convoluted but the operation would take literally forever without it)
+            & np.outer((elimination_vector_2[:,0].reshape(-1,1)), (elimination_vector_2[:,0])).astype(bool)
+            # ... and they aren't the same dislocation (should be taken care of by the previous point)
+            # & (np.logical_not(np.diagflat(np.repeat(True, N))))
+        ))
+
+        for (i, j) in annihilation_list:
+            if elimination_vector_2[i,0] != 0:
+                elimination_vector_2[i,:] = [0,t + 1000] 
+            if elimination_vector_2[j,0] != 0:
+                elimination_vector_2[j,:] = [0,t + 1000]
+
+        # this whole thing can probably be improved by concatenating after np.nonzero and then
+        # just elimination_vector[concatenated id'd close dislocations, duplicates are fine] = 0
+        # but that'll make recording the time difficult 
+
+        return elimination_vector_2[:,0] * vs(sigma_s_analytic_sum, xs, dislocations, sigma_ext=sigma_ext)
+
+    # keep this function call with the dxsdt func definition and elimination_vector init
+    ivp_result_2 = solve_ivp(dxsdt_func_2, (t0, num_tpoints*t0), ivp_result.y[:,-1], 
+                           t_eval=np.linspace(t0, num_tpoints * t0, num_tpoints), method="RK45", args=(0.035,))
+    return elimination_vector_2, ivp_result_2
+
+
+app._unparsable_cell(
+    r"""
+    anifig_s, aniax_s = plt.subplots(figsize=(9,9))
+    ] = xs[(dislocations[:,2] == -1) & ((elimination_vector_2[:,1] > i + 1000) | (elimination_vector_2[:,1] == 0))]
+        ys_neg = dislocations[(dislocations[:,2] == -1) & ((elimination_vector_2[:,1] > i + 1000) 
+                                                           | (elimination_vector_2[:,1] == 0)), 1]
+        dislocations_i_neg = np.column_stack((
+            xs_neg,
+            ys_neg
+        ))
+        scat_neg_b_s.set_offsets(dislocations_i_neg)
+
+        return (scat_lattice_s, scat_pos_b_s, scat_neg_b_s)
+
+    aniax_s.set_title(\"Randomly-placed dislocation with $sigma = 0.035$\n400 dislocations, annihilation distance within 1 lattice cell \") 
+    aniax_s.set_xlabel(\"x\")
+    aniax_s.set_ylabel(\"y\")
+    aniax_s.legend()
+
+    ani_s = animation.FuncAnimation(anifig_s, 
+                                  partial(animate_2, xs_p=ivp_result_2.y), 
+                                  frames=1000, 
+                                  blit=True)    
+
+    FFwriter_s = animation.FFMpegWriter(fps=10)
+    ani_s.save(\"dude i dont know.mp4\", writer = FFwriter_s)
+    """,
+    name="_"
+)
+
+
+@app.cell
+def _(L, dislocations, elimination_vector_2, ivp_result_2, vs):
+    strains = np.zeros(1000)
+    for i in range(ivp_result_2.t.size):
+        truth_selector = ((elimination_vector_2[:,1] > i + 1000) | (elimination_vector_2[:,1] == 0))
+        bs = dislocations[truth_selector,2]
+        xs = ivp_result_2.y[truth_selector, i] % L 
+        strains[i] = bs @ vs(sigma_s_analytic_sum, xs, dislocations[truth_selector,:], sigma_ext=0.035)
+    return (strains,)
+
+
+@app.cell
+def _(ax, strains):
+    fig_line, ax_line = plt.subplots()
+    ax.scatter(np.log10(range(1000)), np.log10(strains))
+    plt.show()
+    return
+
+
+@app.cell
+def _(L, LATTICE_EDGE_CT, calculate_displacements):
+    # will give similar results as apply_dislocations but the edge behavior is cleaner, though i think it's technically incorrect 
+    def apply_dislocations2(dislocations):
+        # non-dislocated lattice 
+        xs = np.linspace(0, L, LATTICE_EDGE_CT)
+        ys = np.linspace(0, L, LATTICE_EDGE_CT)
+        X_perfect, Y_perfect = np.meshgrid(xs, ys)
+        X_flat = X_perfect.flatten()
+        Y_flat = Y_perfect.flatten()
+
+        # accumulate displacements from dislocations
+        disp_x = np.zeros_like(X_flat)
+        disp_y = np.zeros_like(Y_flat)
+
+        for c_x, c_y, b in dislocations:
+            u_x, u_y = calculate_displacements(X_flat, Y_flat, c_x, c_y, b)
+            disp_x += u_x
+            disp_y += u_y
+
+        X_new = (X_flat + disp_x)  % L
+        Y_new = (Y_flat + disp_y)  % L
+
+        return X_new, Y_new 
     return
 
 
