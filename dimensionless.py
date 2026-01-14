@@ -50,14 +50,15 @@ def sigma_s_analytic_sum(xs, ys, L):
         den = L**2 * (np.cos(x_arg) - np.cosh(y_arg))**2
 
         # sets stress to zero when X[i] or Y[i] = 0 (ie at the point we dont want to compute)
-        return -np.divide(num, den, out=np.zeros((xs.size,xs.size)), where=((X!=0) & (Y!=0))) # might need an extra condition like & elim!=0 - may be causing some of the noise
+        # might need an extra condition like & elim!=0 - may be causing some of the noise
+        return -np.divide(num, den, out=np.zeros((xs.size,xs.size)), where=((X!=0) & (Y!=0)))
 
 
 @app.function
 def dxsdt_func(t, xs_p, sigma_ext, elim, lc):
     # solve_ivp results and inputs don't obey periodic conditions 
     xs = xs_p % lc.L
-
+    print(t)
     # annihilation_list is a list of ordered pairs of annihilated dislocations 
     # we mark a dislocation to be annihilated when... 
     annihilation_list = np.column_stack(np.nonzero(
@@ -103,7 +104,47 @@ def dxsdt_func(t, xs_p, sigma_ext, elim, lc):
     # just elimination_vector[concatenated id'd close dislocations, duplicates are fine] = 0
     # but that'll make recording the time difficult 
 
-    return elim.mults * lc.vs(sigma_s_analytic_sum, xs)
+    return elim.mults * lc.vs(sigma_s_analytic_sum, xs, sigma_ext=sigma_ext)
+
+
+@app.function
+def dxsdt_func_2(t, xs_p, sigma_ext, elim, lc):
+    # the positions used by the ivp solver aren't bound to the box so we apply that binding here
+    xs = xs_p % lc.L
+    print(t + 1000)
+
+    # annihilation_list is a list of ordered pairs of annihilated dislocations 
+    # we mark a dislocation to be annihilated when... 
+    annihilation_list = np.column_stack(np.nonzero(
+        # ... two dislocations are within ye of each other... 
+        # (this particular implementation draws more of a square bounding box 
+        # than a circle one to check closeness but it's fine)
+        (np.isclose(xs.reshape(-1,1), xs.reshape(1,-1), rtol=0, atol=lc.ye))
+        & (np.isclose(lc.ys.reshape(-1,1), lc.ys.reshape(1,-1), rtol=0, atol=lc.ye))
+        # ... and the dislocations have opposite burgers vectors... 
+        & (lc.bs.reshape(-1,1) != lc.bs.reshape(1,-1)) 
+        # ... and they haven't been previously selected...
+        # (this looks convoluted but the operation would take literally forever without it)
+        & np.outer((elim.mults.reshape(-1,1)), (elim.mults)).astype(bool)
+        # ... and they aren't the same dislocation (should be taken care of by the previous point)
+        # & (np.logical_not(np.diagflat(np.repeat(True, N))))
+    ))
+
+    for (i, j) in annihilation_list: 
+        # if (elimination_vector[i,0] != 0) or (elimination_vector[j,0] != 0):
+        #     print(f"annihilation event with {i} and {j} at t = {t}, the {t/t0}th step")
+        if elim.mults[i] != 0:
+            elim.mults[i] = 0 
+            elim.elim_times[i] = t + 1000
+        if elim.mults[j] != 0:
+            elim.mults[j] = 0 
+            elim.elim_times[j] = t + 1000
+
+    # this whole thing can probably be improved by concatenating after np.nonzero and then
+    # just elimination_vector[concatenated id'd close dislocations, duplicates are fine] = 0
+    # but that'll make recording the time difficult 
+
+    return elim.mults * lc.vs(sigma_s_analytic_sum, xs, sigma_ext=sigma_ext)
 
 
 @app.class_definition
@@ -116,6 +157,14 @@ class Eliminator:
 
         # time at which the ith dislocation was annihilated. if i == 0 (TODO: nan), not eliminated   
         self.elim_times = np.zeros(size)
+
+        self.size = size 
+
+    def copy(self):
+        new_elim = Eliminator(self.size)
+        new_elim.mults = self.mults.copy()
+        new_elim.elim_times = self.elim_times.copy()
+        return new_elim
 
 
 @app.class_definition
@@ -144,6 +193,9 @@ class LatticeCell:
         self.L = L 
         self.t0 = t0
         self.LATTICE_EDGE_CT = int(L/b)
+
+        self.elim_relax = None
+        self.elim_stress = None
 
 
     def apply_dislocations(self, dislocations_xs=None, dislocations_ys=None, bs=None):
@@ -232,6 +284,9 @@ class LatticeCell:
 
 
     def relax_ivp(self, num_tpoints=1000):
+        if self.elim_relax is not None:
+            raise TypeError("cannot relax_ivp more than once")
+
         self.elim_relax = Eliminator(self.N)
         ivp_result = solve_ivp(dxsdt_func,
                                (self.t0, num_tpoints*self.t0), 
@@ -240,12 +295,69 @@ class LatticeCell:
                                method="RK45",
                                args=(0, self.elim_relax, self)
                               )
+        self.relax_ivp_result = ivp_result
         return ivp_result
+
+    def stress_ivp(self, num_tpoints=1000):
+        if self.elim_relax is None:
+            raise TypeError("run relax_ivp first")
+        if self.elim_stress is not None:
+            raise TypeError("cannot run stress_ivp more than once")
+
+        self.elim_stress = self.elim_relax.copy()
+        relax_last_t = self.relax_ivp_result.t[-1]
+        ivp_result = solve_ivp(dxsdt_func,
+                               (relax_last_t + self.t0, 
+                                relax_last_t + num_tpoints*self.t0), 
+                               self.relax_ivp_result.y[:,-1], 
+                               t_eval=np.linspace(relax_last_t + self.t0, 
+                                                  relax_last_t + num_tpoints*self.t0, 
+                                                  num_tpoints),
+                               method="RK45",
+                               args=(self.sigma_ext, self.elim_stress, self)
+                              )
+        self.stress_ivp_result = ivp_result
+        return ivp_result     
+
+    def stress_ivp_2(self, num_tpoints=1000):
+        self.elim_stress_2 = self.elim_relax.copy()
+        relax_last_t = self.relax_ivp_result.t[-1]
+        ivp_result = solve_ivp(dxsdt_func_2, 
+                               (self.t0, num_tpoints*self.t0), 
+                               self.relax_ivp_result.y[:,-1], 
+                               t_eval=np.linspace(self.t0, num_tpoints * self.t0, 
+                                                  num_tpoints), 
+                               method="RK45", 
+                               args=(self.sigma_ext, self.elim_stress_2, self))
+        self.stress_ivp_result_2 = ivp_result
+        return ivp_result     
+
+    def strain_rate_graph(self, elim, ivp_result):
+        time_length = ivp_result.t.size
+        strains = np.zeros(time_length)
+        for i in range(time_length):
+            truth_selector = ((elim.elim_times[:,1] > i + 1000) 
+                              | (elim.elim_times[:,1] == 0))
+            bs = self.bs[truth_selector]
+            xs = ivp_result.y[truth_selector, i] % self.L
+
+            strains[i] = abs(bs @ vs(sigma_s_analytic_sum,
+                                     xs,
+                                     ys=self.ys[truth_selector], 
+                                     bs=bs,
+                                     sigma_ext=0.035))
+
+        fig, ax = plt.subplots()
+        ax.scatter(np.log10(range(1000)), np.log10(strains))
+        ax.set_xlabel("$log_{10}(t)$")
+        ax.set_ylabel("$log_{10}$(strain rate)")
+        ax.set_title(rf"strain rate vs time when $\sigma={self.sigma_ext}$")
+        return fig
 
 
 @app.cell
 def _():
-    thing = LatticeCell(20, 0, 1, 100, 1, 1, rng_seed=1)
+    thing = LatticeCell(20, 0.035, 1, 100, 1, 1, rng_seed=1)
     X_thing, Y_thing = thing.apply_dislocations()
     mo.mpl.interactive(thing.plot_lattice(X_thing, Y_thing, dislocations_xs=thing.x0s))
     return (thing,)
@@ -268,6 +380,38 @@ def _(res, thing):
     print(res.y[:,-1])
     print(thing.elim_relax.mults)
     print(thing.elim_relax.elim_times)
+    return
+
+
+@app.cell
+def _(res):
+    print(res.t[-1])
+    return
+
+
+@app.cell
+def _(thing):
+    res3 = thing.stress_ivp()
+    return
+
+
+@app.cell
+def _(thing):
+    res2 = thing.stress_ivp_2()
+    return (res2,)
+
+
+@app.cell
+def _(res2, thing):
+    print(res2.y[:,-1])
+    print(thing.elim_stress_2.mults)
+    print(thing.elim_stress_2.elim_times)
+    return
+
+
+@app.cell
+def _(thing):
+    res3 = thing.stress_ivp_2()
     return
 
 
@@ -341,61 +485,6 @@ def _(
 
     FFwriter = animation.FFMpegWriter(fps=10)
     return
-
-
-@app.cell
-def _(
-    L,
-    dislocations,
-    elimination_vector,
-    ivp_result,
-    num_tpoints,
-    t0,
-    vs,
-    ye,
-):
-    # we use this vector to make sure that canceled dislocations don't contribute to dxdt 
-    elimination_vector_2 = elimination_vector.copy()
-
-
-    def dxsdt_func_2(t, xs_p, sigma_ext):
-        # the positions used by the ivp solver aren't bound to the box so we apply that binding here
-        xs = xs_p % L
-        print(t + 1000)
-
-        # annihilation_list is a list of ordered pairs of annihilated dislocations 
-        # we mark a dislocation to be annihilated when... 
-        annihilation_list = np.column_stack(np.nonzero(
-            # ... two dislocations are within ye of each other... 
-            # (this particular implementation draws more of a square bounding box 
-            # than a circle one to check closeness but it's fine)
-            (np.isclose(xs.reshape(-1,1), xs.reshape(1,-1), rtol=0, atol=ye))
-            & (np.isclose(dislocations[:,1].reshape(-1,1), dislocations[:,1].reshape(1,-1), rtol=0, atol=ye))
-            # ... and the dislocations have opposite burgers vectors... 
-            & (dislocations[:,2].reshape(-1,1) != dislocations[:,2].reshape(1,-1)) 
-            # ... and they haven't been previously selected...
-            # (this looks convoluted but the operation would take literally forever without it)
-            & np.outer((elimination_vector_2[:,0].reshape(-1,1)), (elimination_vector_2[:,0])).astype(bool)
-            # ... and they aren't the same dislocation (should be taken care of by the previous point)
-            # & (np.logical_not(np.diagflat(np.repeat(True, N))))
-        ))
-
-        for (i, j) in annihilation_list:
-            if elimination_vector_2[i,0] != 0:
-                elimination_vector_2[i,:] = [0,t + 1000] 
-            if elimination_vector_2[j,0] != 0:
-                elimination_vector_2[j,:] = [0,t + 1000]
-
-        # this whole thing can probably be improved by concatenating after np.nonzero and then
-        # just elimination_vector[concatenated id'd close dislocations, duplicates are fine] = 0
-        # but that'll make recording the time difficult 
-
-        return elimination_vector_2[:,0] * vs(sigma_s_analytic_sum, xs, dislocations, sigma_ext=sigma_ext)
-
-    # keep this function call with the dxsdt func definition and elimination_vector init
-    ivp_result_2 = solve_ivp(dxsdt_func_2, (t0, num_tpoints*t0), ivp_result.y[:,-1], 
-                           t_eval=np.linspace(t0, num_tpoints * t0, num_tpoints), method="RK45", args=(0.035,))
-    return elimination_vector_2, ivp_result_2
 
 
 app._unparsable_cell(
