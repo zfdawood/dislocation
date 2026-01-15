@@ -58,15 +58,29 @@ def sigma_s_analytic_sum(xs, ys, L):
 def dxsdt_func(t, xs_p, sigma_ext, elim, lc):
     # solve_ivp results and inputs don't obey periodic conditions 
     xs = xs_p % lc.L
-    print(t)
+    # print(t)
     # annihilation_list is a list of ordered pairs of annihilated dislocations 
     # we mark a dislocation to be annihilated when... 
+    # annihilation_list = np.column_stack(np.nonzero(
+    #     # ... two dislocations are within ye of each other... 
+    #     # (this particular implementation draws more of a square bounding box 
+    #     # than a circle one to check closeness but it's fine)
+    #     (np.isclose(xs.reshape(-1,1), xs.reshape(1,-1), rtol=0, atol=lc.ye))
+    #     & (np.isclose(lc.ys.reshape(-1,1), lc.ys.reshape(1,-1), rtol=0, atol=lc.ye))
+    #     # ... and the dislocations have opposite burgers vectors... 
+    #     & (lc.bs.reshape(-1,1) != lc.bs.reshape(1,-1)) 
+    #     # ... and they haven't been previously selected...
+    #     # (this looks convoluted but the operation would take literally forever without it)
+    #     & np.outer((elim.mults.reshape(-1,1)), (elim.mults)).astype(bool)
+    #     # ... and they aren't the same dislocation (should be taken care of by the previous point)
+    #     # & (np.logical_not(np.diagflat(np.repeat(True, N))))
+    # ))
+
+    # annihilation_list is a list of ordered pairs of annihilated dislocations 
+    # we mark a dislocation to be annihilated when...
     annihilation_list = np.column_stack(np.nonzero(
-        # ... two dislocations are within ye of each other... 
-        # (this particular implementation draws more of a square bounding box 
-        # than a circle one to check closeness but it's fine)
-        (np.isclose(xs.reshape(-1,1), xs.reshape(1,-1), rtol=0, atol=lc.ye))
-        & (np.isclose(lc.ys.reshape(-1,1), lc.ys.reshape(1,-1), rtol=0, atol=lc.ye))
+        # ...two dislocations are within ye of each other...
+        (np.sqrt((xs - xs.reshape(-1,1))**2 + (lc.ys - lc.ys.reshape(-1,1))**2) < lc.ye)
         # ... and the dislocations have opposite burgers vectors... 
         & (lc.bs.reshape(-1,1) != lc.bs.reshape(1,-1)) 
         # ... and they haven't been previously selected...
@@ -75,20 +89,6 @@ def dxsdt_func(t, xs_p, sigma_ext, elim, lc):
         # ... and they aren't the same dislocation (should be taken care of by the previous point)
         # & (np.logical_not(np.diagflat(np.repeat(True, N))))
     ))
-
-    # # annihilation_list is a list of ordered pairs of annihilated dislocations 
-    # # we mark a dislocation to be annihilated when...
-    # annihilation_list = np.column_stack(np.nonzero(
-    #     # ...two dislocations are within ye of each other...
-    #     (np.sqrt((xs - xs.reshape(-1,1))**2 + (lc.ys - lc.ys.reshape(-1,1))**2) < lc.ye)
-    #     # ... and the dislocations have opposite burgers vectors... 
-    #     & (lc.bs.reshape(-1,1) != lc.bs.reshape(1,-1)) 
-    #     # ... and they haven't been previously selected...
-    #     # (this looks convoluted but the operation would take literally forever without it)
-    #     & np.outer((elim.multipliers.reshape(-1,1)), (elim.multipliers)).astype(bool)
-    #     # ... and they aren't the same dislocation (should be taken care of by the previous point)
-    #     # & (np.logical_not(np.diagflat(np.repeat(True, N))))
-    # ))
 
     for (i, j) in annihilation_list: 
         # if (elimination_vector[i,0] != 0) or (elimination_vector[j,0] != 0):
@@ -111,16 +111,30 @@ def dxsdt_func(t, xs_p, sigma_ext, elim, lc):
 def dxsdt_func_2(t, xs_p, sigma_ext, elim, lc):
     # the positions used by the ivp solver aren't bound to the box so we apply that binding here
     xs = xs_p % lc.L
-    print(t + 1000)
+    # print(t + 1000)
+
+    # # annihilation_list is a list of ordered pairs of annihilated dislocations 
+    # # we mark a dislocation to be annihilated when... 
+    # annihilation_list = np.column_stack(np.nonzero(
+    #     # ... two dislocations are within ye of each other... 
+    #     # (this particular implementation draws more of a square bounding box 
+    #     # than a circle one to check closeness but it's fine)
+    #     (np.isclose(xs.reshape(-1,1), xs.reshape(1,-1), rtol=0, atol=lc.ye))
+    #     & (np.isclose(lc.ys.reshape(-1,1), lc.ys.reshape(1,-1), rtol=0, atol=lc.ye))
+    #     # ... and the dislocations have opposite burgers vectors... 
+    #     & (lc.bs.reshape(-1,1) != lc.bs.reshape(1,-1)) 
+    #     # ... and they haven't been previously selected...
+    #     # (this looks convoluted but the operation would take literally forever without it)
+    #     & np.outer((elim.mults.reshape(-1,1)), (elim.mults)).astype(bool)
+    #     # ... and they aren't the same dislocation (should be taken care of by the previous point)
+    #     # & (np.logical_not(np.diagflat(np.repeat(True, N))))
+    # ))
 
     # annihilation_list is a list of ordered pairs of annihilated dislocations 
-    # we mark a dislocation to be annihilated when... 
+    # we mark a dislocation to be annihilated when...
     annihilation_list = np.column_stack(np.nonzero(
-        # ... two dislocations are within ye of each other... 
-        # (this particular implementation draws more of a square bounding box 
-        # than a circle one to check closeness but it's fine)
-        (np.isclose(xs.reshape(-1,1), xs.reshape(1,-1), rtol=0, atol=lc.ye))
-        & (np.isclose(lc.ys.reshape(-1,1), lc.ys.reshape(1,-1), rtol=0, atol=lc.ye))
+        # ...two dislocations are within ye of each other...
+        (np.sqrt((xs - xs.reshape(-1,1))**2 + (lc.ys - lc.ys.reshape(-1,1))**2) < lc.ye)
         # ... and the dislocations have opposite burgers vectors... 
         & (lc.bs.reshape(-1,1) != lc.bs.reshape(1,-1)) 
         # ... and they haven't been previously selected...
@@ -330,34 +344,65 @@ class LatticeCell:
                                method="RK45", 
                                args=(self.sigma_ext, self.elim_stress_2, self))
         self.stress_ivp_result_2 = ivp_result
-        return ivp_result     
+        return ivp_result    
 
-    def strain_rate_graph(self, elim, ivp_result):
+    def relax_rate_graph(self, elim, ivp_result):
+        time_length, strains = self.relax_rate(elim, ivp_result)        
+        
+        fig, ax = plt.subplots()
+        ax.scatter(np.log10(range(time_length)), np.log10(strains))
+        ax.set_xlabel("$log_{10}(t)$")
+        ax.set_ylabel("$log_{10}$(strain rate)")
+        ax.set_title(rf"strain rate vs time when when relaxing$")
+        return fig
+
+    def relax_rate(self, elim, ivp_result):
         time_length = ivp_result.t.size
         strains = np.zeros(time_length)
         for i in range(time_length):
-            truth_selector = ((elim.elim_times[:,1] > i + 1000) 
-                              | (elim.elim_times[:,1] == 0))
+            truth_selector = ((elim.elim_times > i) 
+                              | (elim.elim_times == 0))
             bs = self.bs[truth_selector]
             xs = ivp_result.y[truth_selector, i] % self.L
 
-            strains[i] = abs(bs @ vs(sigma_s_analytic_sum,
+            strains[i] = abs(bs @ self.vs(sigma_s_analytic_sum,
                                      xs,
                                      ys=self.ys[truth_selector], 
                                      bs=bs,
-                                     sigma_ext=0.035))
+                                     sigma_ext=0))
+        return time_length, strains
+    
+    def strain_rate_graph(self, elim, ivp_result):
 
+        time_length, strains = self.strain_rate(elim, ivp_result)        
+        
         fig, ax = plt.subplots()
-        ax.scatter(np.log10(range(1000)), np.log10(strains))
+        ax.scatter(np.log10(range(time_length)), np.log10(strains))
         ax.set_xlabel("$log_{10}(t)$")
         ax.set_ylabel("$log_{10}$(strain rate)")
         ax.set_title(rf"strain rate vs time when $\sigma={self.sigma_ext}$")
         return fig
 
+    def strain_rate(self, elim, ivp_result):
+        time_length = ivp_result.t.size
+        strains = np.zeros(time_length)
+        for i in range(time_length):
+            truth_selector = ((elim.elim_times > i + 1000) 
+                              | (elim.elim_times == 0))
+            bs = self.bs[truth_selector]
+            xs = ivp_result.y[truth_selector, i] % self.L
+
+            strains[i] = abs(bs @ self.vs(sigma_s_analytic_sum,
+                                     xs,
+                                     ys=self.ys[truth_selector], 
+                                     bs=bs,
+                                     sigma_ext=0.035))
+        return time_length, strains
+
 
 @app.cell
 def _():
-    thing = LatticeCell(20, 0.035, 1, 100, 1, 1, rng_seed=1)
+    thing = LatticeCell(50, 0.035, 1, 100, 1, 1, rng_seed=0)
     X_thing, Y_thing = thing.apply_dislocations()
     mo.mpl.interactive(thing.plot_lattice(X_thing, Y_thing, dislocations_xs=thing.x0s))
     return (thing,)
@@ -391,27 +436,74 @@ def _(res):
 
 @app.cell
 def _(thing):
-    res3 = thing.stress_ivp()
+    res2 = thing.stress_ivp_2()
     return
 
 
 @app.cell
 def _(thing):
-    res2 = thing.stress_ivp_2()
-    return (res2,)
-
-
-@app.cell
-def _(res2, thing):
-    print(res2.y[:,-1])
-    print(thing.elim_stress_2.mults)
     print(thing.elim_stress_2.elim_times)
     return
 
 
 @app.cell
 def _(thing):
-    res3 = thing.stress_ivp_2()
+    mo.mpl.interactive(thing.strain_rate_graph(thing.elim_stress_2, thing.stress_ivp_result_2))
+    return
+
+
+@app.cell
+def _(animate_relax):
+    animate_relax()
+    return
+
+
+@app.cell
+def _():
+    N = 50
+    npoints = 1000
+    ensemble_size = 100
+
+    stresses = [0.0025, 0.0075, 0.01, 0.0125, 0.0175, 0.0225, 0.0325, 0.035]
+    averaged_strains = np.zeros((len(stresses), npoints))
+
+
+    for stress_i, stress in enumerate(stresses):
+        strain_storage = np.zeros((ensemble_size, npoints))
+        for i in range(0,ensemble_size):
+            lc = LatticeCell(N, stress, 1, 100, 1, 1, rng_seed=i)
+            lc.relax_ivp()
+            lc.stress_ivp_2()
+            _, strains = lc.strain_rate(elim=lc.elim_stress_2, ivp_result=lc.stress_ivp_result_2)
+            strain_storage[i,:] = strains.copy()
+        averaged_strains[stress_i, :] = np.mean(strain_storage, axis=0)
+
+    return averaged_strains, npoints, strains, stresses
+
+
+@app.cell
+def _(averaged_strains, npoints, stresses):
+    fig, ax = plt.subplots(figsize=(9,9))
+    for stress_j, stressj in enumerate(stresses):
+        ax.scatter(np.log10(range(npoints)), np.log10(averaged_strains[stress_j, :]), label=rf"$\sigma = {stressj}$")
+    ax.legend()
+    ax.set_xlabel("$log_{10}(t)$")
+    ax.set_ylabel("$log_{10}$(strain rate)")
+    ax.set_title(rf"strain rate vs time")
+    mo.mpl.interactive(fig)
+    return (ax,)
+
+
+@app.cell
+def _():
+    tmp_strain = np.zeros((100,1000))
+    for k in range(100):
+        lck = LatticeCell(50, 0.035, 1, 100, 1, 1, rng_seed=k)
+        lck.relax_ivp()
+        lck.stress_ivp_2()
+        _, strainsk = lck.strain_rate(elim=lck.elim_stress_2, ivp_result=lck.stress_ivp_result_2)
+        tmp_strain[k,:] = strainsk.copy()
+    print(tmp_strain)
     return
 
 
@@ -425,108 +517,115 @@ def write_to_disk(filename, obj):
 
 
 @app.cell
-def _(
-    L,
-    X,
-    Y,
-    apply_dislocations,
-    dislocations,
-    elimination_vector,
-    ivp_result,
-):
-    anifig, aniax = plt.subplots(figsize=(9,9))
+def _(X, Y, dislocations):
+    def animate_relax(lc, ivp_result, filename):
+        anifig, aniax = plt.subplots(figsize=(9,9))
+    
+        aniax.scatter(X,Y, label="lattice points (base)")
+        aniax.scatter(dislocations[:,0], dislocations[:,1], label="dislocations (base)")
+    
+        scat_lattice = aniax.scatter([], [], c='g', label="lattice points")
+        scat_pos_b = aniax.scatter([], [], c='y', label="dislocations with b = 1")
+        scat_neg_b = aniax.scatter([], [], c='m', label="dislocations with b = -1")
+    
+        def animate(i, xs_p):
+            xs = xs_p[:,i] % lc.L
+    
+            lattice_positions = np.column_stack(lc.apply_dislocations(lc.xs))
+            scat_lattice.set_offsets(lattice_positions)
+    
+            xs_pos = xs[(lc.bs == 1) & ((lc.elim_relax.elim_times > i) | (lc.elim_relax.elim_times == 0))]
+            ys_pos = lc.ys[(lc.bs == 1) & ((lc.elim_relax.elim_times > i) 
+                                                              | (lc.elim_relax_elim_times == 0))]
+            dislocations_i_pos = np.column_stack((
+                xs_pos,
+                ys_pos,
+            ))
+            scat_pos_b.set_offsets(dislocations_i_pos)
 
-    aniax.scatter(X,Y, label="lattice points (base)")
-    aniax.scatter(dislocations[:,0], dislocations[:,1], label="dislocations (base)")
+            xs_neg = xs[(lc.bs == -1) & ((lc.elim_relax.elim_times > i) | (lc.elim_relax.elim_times == 0))]
+            ys_neg = lc.ys[(lc.bs == -1) & ((lc.elim_relax.elim_times > i) 
+                                                              | (lc.elim_relax_elim_times == 0))]
 
-    scat_lattice = aniax.scatter([], [], c='g', label="lattice points")
-    scat_pos_b = aniax.scatter([], [], c='y', label="dislocations with b = 1")
-    scat_neg_b = aniax.scatter([], [], c='m', label="dislocations with b = -1")
-
-    def animate(i, xs_p):
-        xs = xs_p[:,i] % L
-
-        lattice_positions = np.column_stack(apply_dislocations(np.column_stack((
-            xs, dislocations[:,1:]
-        ))))
-        scat_lattice.set_offsets(lattice_positions)
-
-        xs_pos = xs[(dislocations[:,2] == 1) & ((elimination_vector[:,1] > i) | (elimination_vector[:,1] == 0))]
-        ys_pos = dislocations[(dislocations[:,2] == 1) & ((elimination_vector[:,1] > i) 
-                                                          | (elimination_vector[:,1] == 0)), 1]
-        dislocations_i_pos = np.column_stack((
-            xs_pos,
-            ys_pos,
-        ))
-        scat_pos_b.set_offsets(dislocations_i_pos)
-
-        xs_neg = xs[(dislocations[:,2] == -1) & ((elimination_vector[:,1] > i) | (elimination_vector[:,1] == 0))]
-        ys_neg = dislocations[(dislocations[:,2] == -1) & ((elimination_vector[:,1] > i) 
-                                                           | (elimination_vector[:,1] == 0)), 1]
-        dislocations_i_neg = np.column_stack((
-            xs_neg,
-            ys_neg
-        ))
-        scat_neg_b.set_offsets(dislocations_i_neg)
-
-        return (scat_lattice, scat_pos_b, scat_neg_b)
-
-    aniax.set_title("Randomly-placed dislocation relaxation\n400 dislocations, annihilation distance within 1 lattice cell ") 
-    aniax.set_xlabel("x")
-    aniax.set_ylabel("y")
-    aniax.legend()
-
-    ani = animation.FuncAnimation(anifig, 
-                                  partial(animate, xs_p=ivp_result.y), 
-                                  frames=1000, 
-                                  blit=True)    
-
-    # HTML(ani.to_jshtml())
-
-    FFwriter = animation.FFMpegWriter(fps=10)
-    return
-
-
-app._unparsable_cell(
-    r"""
-    anifig_s, aniax_s = plt.subplots(figsize=(9,9))
-    ] = xs[(dislocations[:,2] == -1) & ((elimination_vector_2[:,1] > i + 1000) | (elimination_vector_2[:,1] == 0))]
-        ys_neg = dislocations[(dislocations[:,2] == -1) & ((elimination_vector_2[:,1] > i + 1000) 
-                                                           | (elimination_vector_2[:,1] == 0)), 1]
-        dislocations_i_neg = np.column_stack((
-            xs_neg,
-            ys_neg
-        ))
-        scat_neg_b_s.set_offsets(dislocations_i_neg)
-
-        return (scat_lattice_s, scat_pos_b_s, scat_neg_b_s)
-
-    aniax_s.set_title(\"Randomly-placed dislocation with $sigma = 0.035$\n400 dislocations, annihilation distance within 1 lattice cell \") 
-    aniax_s.set_xlabel(\"x\")
-    aniax_s.set_ylabel(\"y\")
-    aniax_s.legend()
-
-    ani_s = animation.FuncAnimation(anifig_s, 
-                                  partial(animate_2, xs_p=ivp_result_2.y), 
-                                  frames=1000, 
-                                  blit=True)    
-
-    FFwriter_s = animation.FFMpegWriter(fps=10)
-    ani_s.save(\"dude i dont know.mp4\", writer = FFwriter_s)
-    """,
-    name="_"
-)
+            dislocations_i_neg = np.column_stack((
+                xs_neg,
+                ys_neg
+            ))
+            scat_neg_b.set_offsets(dislocations_i_neg)
+    
+            return (scat_lattice, scat_pos_b, scat_neg_b)
+    
+        aniax.set_title(f"Randomly-placed dislocation relaxation\n{lc.N} dislocations, annihilation distance within {lc.ye} lattice cell(s)") 
+        aniax.set_xlabel("x")
+        aniax.set_ylabel("y")
+        aniax.legend()
+    
+        ani = animation.FuncAnimation(anifig, 
+                                      partial(animate, xs_p=ivp_result.y), 
+                                      frames=1000, 
+                                      blit=True)    
+    
+        # HTML(ani.to_jshtml())
+    
+        FFwriter = animation.FFMpegWriter(fps=10)
+        ani.save(filename, writer=FFwriter)
+    return (animate_relax,)
 
 
 @app.cell
-def _(L, dislocations, elimination_vector_2, ivp_result_2, vs):
-    strains = np.zeros(1000)
-    for i in range(ivp_result_2.t.size):
-        truth_selector = ((elimination_vector_2[:,1] > i + 1000) | (elimination_vector_2[:,1] == 0))
-        bs = dislocations[truth_selector,2]
-        xs = ivp_result_2.y[truth_selector, i] % L 
-        strains[i] = bs @ vs(sigma_s_analytic_sum, xs, dislocations[truth_selector,:], sigma_ext=0.035)
-    return (strains,)
+def _(X, Y, dislocations):
+    def animate_stress(lc, ivp_result, filename):
+        anifig, aniax = plt.subplots(figsize=(9,9))
+    
+        aniax.scatter(X,Y, label="lattice points (base)")
+        aniax.scatter(dislocations[:,0], dislocations[:,1], label="dislocations (base)")
+    
+        scat_lattice = aniax.scatter([], [], c='g', label="lattice points")
+        scat_pos_b = aniax.scatter([], [], c='y', label="dislocations with b = 1")
+        scat_neg_b = aniax.scatter([], [], c='m', label="dislocations with b = -1")
+    
+        def animate(i, xs_p):
+            xs = xs_p[:,i] % lc.L
+    
+            lattice_positions = np.column_stack(lc.apply_dislocations(lc.xs))
+            scat_lattice.set_offsets(lattice_positions)
+    
+            xs_pos = xs[(lc.bs == 1) & ((lc.elim_relax.elim_times > i + 1000) | (lc.elim_relax.elim_times == 0))]
+            ys_pos = lc.ys[(lc.bs == 1) & ((lc.elim_relax.elim_times > i + 1000) 
+                                                              | (lc.elim_relax_elim_times == 0))]
+            dislocations_i_pos = np.column_stack((
+                xs_pos,
+                ys_pos,
+            ))
+            scat_pos_b.set_offsets(dislocations_i_pos)
+
+            xs_neg = xs[(lc.bs == -1) & ((lc.elim_relax.elim_times > i + 1000) | (lc.elim_relax.elim_times == 0))]
+            ys_neg = lc.ys[(lc.bs == -1) & ((lc.elim_relax.elim_times > i + 1000) 
+                                                              | (lc.elim_relax_elim_times == 0))]
+
+            dislocations_i_neg = np.column_stack((
+                xs_neg,
+                ys_neg
+            ))
+            scat_neg_b.set_offsets(dislocations_i_neg)
+    
+            return (scat_lattice, scat_pos_b, scat_neg_b)
+    
+        aniax.set_title(f"Randomly-placed dislocation relaxation\n{lc.N} dislocations, annihilation distance within {lc.ye} lattice cell(s)") 
+        aniax.set_xlabel("x")
+        aniax.set_ylabel("y")
+        aniax.legend()
+    
+        ani = animation.FuncAnimation(anifig, 
+                                      partial(animate, xs_p=ivp_result.y), 
+                                      frames=1000, 
+                                      blit=True)    
+    
+        # HTML(ani.to_jshtml())
+    
+        FFwriter = animation.FFMpegWriter(fps=10)
+        ani.save(filename, writer=FFwriter)
+    return
 
 
 @app.cell
