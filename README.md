@@ -16,7 +16,8 @@ the system either flows (high stress) or jams (low stress).
 | `dislocation_notes/` | Whiteboard photos: nondimensionalization and the periodic image sum. |
 | `corrected.py` | A marimo notebook with the fixed simulation, an ensemble you can run from the UI, the Fig. 1 comparison, and the stress-field art. |
 | `replication/` | The same code as plain scripts, for running big ensembles off the notebook. |
-| `figures/` | Output: the Fig. 1 comparison above and a stress-field banner. |
+| `marvelous_3d.py` | The model in 3D: wiggly dislocation lines instead of points, plus red/cyan anaglyphs and a wigglegram. Written in the style of `dimensionless.py`. |
+| `figures/` | Output: the Fig. 1 comparison above, a stress-field banner, and the 3D anaglyph and wigglegram. |
 
 ## What was wrong in `dimensionless.py`
 
@@ -63,12 +64,39 @@ the area), relaxed at σ = 0 for t = 1000, then loaded to t = 10⁴:
   σ_c comes out higher. Open questions: whether that's the smaller box, the shorter
   relaxation, or a difference in the annihilation rule.
 
+## The 3D version (`marvelous_3d.py`)
+
+![Red/cyan anaglyph of the 3D lines after relaxing and loading](figures/marvelous-3d-anaglyph.png)
+
+Each dislocation is a line on its own glide plane, periodic in z, made of nodes that glide
+perpendicular to the line within the plane. The stress on a node is the 2D periodic sum, treating
+every other line as straight at its average x, plus a correction for the wiggles. The correction is
+the nonsingular Peach–Koehler integral (Cai et al. 2006, core radius a = 0.2 y_e) over the real line
+minus the straightened one, integrated exactly along each segment. A line's own field is replaced by
+line tension, with the same core radius as its inner cutoff. Opposite-sign lines on planes closer
+than y_e annihilate whole as soon as any part of them touches. Checks in the notebook:
+
+- The stress formula matches the textbook edge, screw and mixed straight-line fields.
+- The segment integrals match brute-force quadrature.
+- Straight lines move exactly like the 2D model. With a = 0 a full relax-and-load run matches
+  `replication/sim.py` to 2.5×10⁻⁴.
+- A lone wiggle decays at the line-tension rate.
+
+So far, from single runs only: almost every wiggle relaxes away, but same-sign lines on nearby planes
+that cross get locked into a crossed, junction-like pair (the bent pair in the picture). One run each
+to t = 1000 at σ = 0.0125 took about 6 minutes for wiggly lines and 45 s for straight ones. Both jam.
+Nothing here says yet whether the 3D version changes the exponent.
+
+Two things the model doesn't do: crossing same-sign lines never reconnect, and lines never
+cross-slip off their glide planes.
+
 ## Running it
 
 Notebook (uv reads the dependencies from the file header):
 
 ```
 uvx marimo edit --sandbox corrected.py
+uvx marimo edit --sandbox marvelous_3d.py
 ```
 
 Scripts (needs numpy, numba, matplotlib):
